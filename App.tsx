@@ -68,6 +68,7 @@ import {
   initialNotificationsFromBorrowRequests,
   markNotificationsRead
 } from "./src/data/notifications";
+import { submitReport, type ReportDraft } from "./src/data/reports";
 import { books as mockBooks, borrowRequests as mockBorrowRequests, threads, users as mockUsers } from "./src/data/mockData";
 import {
   getCurrentAuthUser,
@@ -415,6 +416,13 @@ export default function App() {
     }
   };
 
+  const handleSubmitReport = async (draft: ReportDraft) => {
+    if (!authUser) {
+      throw new Error("请先登录后提交举报。");
+    }
+    await submitReport(authUser, draft);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
@@ -499,6 +507,7 @@ export default function App() {
                 <MeScreen
                   user={authUser}
                   loading={authLoading}
+                  catalogSource={catalogSource}
                   onSignIn={() => setScreen({ name: "auth", mode: "signIn", message: "登录后可以管理个人资料和隐私设置。" })}
                   onSignUp={() => setScreen({ name: "auth", mode: "signUp", message: "创建账号后就可以开始共享附近的书。" })}
                   onSignOut={handleSignOut}
@@ -521,6 +530,13 @@ export default function App() {
             )}
             onToggleFavorite={() => toggleFavorite(selectedBook.id)}
             onOpenLender={() => openLender(selectedBook.ownerId)}
+            currentUser={authUser}
+            onRequireAuth={() => setScreen({ name: "auth", mode: "signIn", message: "登录后可以提交举报，帮助保护社区安全。" })}
+            onSubmitReport={() => handleSubmitReport({
+              bookId: selectedBook.id,
+              reportedUserId: selectedBook.ownerId,
+              detail: `举报图书：${selectedBook.title}`
+            })}
           />
         )}
 
@@ -567,6 +583,12 @@ export default function App() {
               const friendship = findFriendship(authUser.id, selectedUser.id, friendships);
               if (friendship) void handleFriendshipTransition(friendship, nextStatus);
             }}
+            currentUser={authUser}
+            onRequireAuth={() => setScreen({ name: "auth", mode: "signIn", message: "登录后可以提交举报，帮助保护社区安全。" })}
+            onSubmitReport={() => handleSubmitReport({
+              reportedUserId: selectedUser.id,
+              detail: `举报用户：${selectedUser.displayName}`
+            })}
           />
         )}
 
@@ -832,7 +854,10 @@ function BookDetailScreen({
   onBack,
   onBorrow,
   onToggleFavorite,
-  onOpenLender
+  onOpenLender,
+  currentUser,
+  onRequireAuth,
+  onSubmitReport
 }: {
   book: Book;
   users: User[];
@@ -841,6 +866,9 @@ function BookDetailScreen({
   onBorrow: () => void;
   onToggleFavorite: () => void;
   onOpenLender: () => void;
+  currentUser: AuthUser | null;
+  onRequireAuth: () => void;
+  onSubmitReport: () => Promise<void>;
 }) {
   const owner = getUser(book.ownerId, users);
   const unavailable = book.status !== "available";
@@ -901,7 +929,12 @@ function BookDetailScreen({
           </View>
         </View>
 
-        <ReportButton label="举报这本书或出借者" />
+        <ReportButton
+          label="举报这本书或出借者"
+          currentUser={currentUser}
+          onRequireAuth={onRequireAuth}
+          onSubmit={onSubmitReport}
+        />
       </ScrollView>
       <View style={styles.actionBar}>
         <TouchableOpacity activeOpacity={0.85} style={styles.secondaryAction} onPress={onToggleFavorite}>
@@ -1015,7 +1048,10 @@ function LenderScreen({
   onBack,
   onOpenBook,
   onAddFriend,
-  onFriendshipTransition
+  onFriendshipTransition,
+  currentUser,
+  onRequireAuth,
+  onSubmitReport
 }: {
   user: User;
   books: Book[];
@@ -1024,6 +1060,9 @@ function LenderScreen({
   onOpenBook: (bookId: string) => void;
   onAddFriend: () => void;
   onFriendshipTransition: (nextStatus: FriendshipStatus) => void;
+  currentUser: AuthUser | null;
+  onRequireAuth: () => void;
+  onSubmitReport: () => Promise<void>;
 }) {
   const userBooks = books.filter((book) => book.ownerId === user.id);
   const canAdd = relation === "none" || relation === "rejected";
@@ -1094,7 +1133,12 @@ function LenderScreen({
             </TouchableOpacity>
           ))}
         </View>
-        <ReportButton label={`举报 ${user.displayName}`} />
+        <ReportButton
+          label={`举报 ${user.displayName}`}
+          currentUser={currentUser}
+          onRequireAuth={onRequireAuth}
+          onSubmit={onSubmitReport}
+        />
       </ScrollView>
     </View>
   );
@@ -1538,12 +1582,14 @@ function NeighborsScreen({
 function MeScreen({
   user,
   loading,
+  catalogSource,
   onSignIn,
   onSignUp,
   onSignOut
 }: {
   user: AuthUser | null;
   loading: boolean;
+  catalogSource: "supabase" | "mock";
   onSignIn: () => void;
   onSignUp: () => void;
   onSignOut: () => void;
@@ -1597,6 +1643,8 @@ function MeScreen({
         <SettingsRow icon={Clock3} label="借阅历史" value="24 条" />
         <SettingsRow icon={Bell} label="通知设置" value="已开启" />
         <SettingsRow icon={Settings} label="关于 LinkNest" value="v1.0.0" />
+
+        <BackendStatusPanel user={user} catalogSource={catalogSource} />
 
         <View style={styles.privacyPanel}>
           <Text style={styles.sectionHeading}>隐私与安全</Text>
@@ -2339,20 +2387,97 @@ function NotFoundScreen({
   );
 }
 
-function ReportButton({ label }: { label: string }) {
-  const [reported, setReported] = useState(false);
+function BackendStatusPanel({
+  user,
+  catalogSource
+}: {
+  user: AuthUser;
+  catalogSource: "supabase" | "mock";
+}) {
+  const connected = isSupabaseConfigured && !user.isDemo && catalogSource === "supabase";
+  const rows = [
+    {
+      label: "Supabase 配置",
+      value: isSupabaseConfigured ? "已读取环境变量" : "未配置，使用本地演示"
+    },
+    {
+      label: "当前会话",
+      value: user.isDemo ? "演示用户" : "真实登录"
+    },
+    {
+      label: "图书数据源",
+      value: catalogSource === "supabase" ? "Supabase" : "本地示例"
+    },
+    {
+      label: "举报写入",
+      value: connected ? "写入 reports 表" : "写入本地演示记录"
+    }
+  ];
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.86}
-      style={[styles.reportButton, reported && styles.reportButtonDone]}
-      onPress={() => setReported(true)}
-    >
-      <Shield size={17} color={reported ? palette.green : palette.red} />
-      <Text style={[styles.reportButtonText, reported && styles.reportButtonDoneText]}>
-        {reported ? "已收到举报，我们会尽快审核" : label}
-      </Text>
-    </TouchableOpacity>
+    <View style={styles.backendPanel}>
+      <View style={styles.backendPanelHeader}>
+        <Shield size={18} color={connected ? palette.green : palette.blue} />
+        <Text style={styles.sectionHeading}>后端联调状态</Text>
+      </View>
+      {rows.map((row) => (
+        <View key={row.label} style={styles.backendStatusRow}>
+          <Text style={styles.mutedText}>{row.label}</Text>
+          <Text style={styles.backendStatusValue}>{row.value}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ReportButton({
+  label,
+  currentUser,
+  onRequireAuth,
+  onSubmit
+}: {
+  label: string;
+  currentUser: AuthUser | null;
+  onRequireAuth: () => void;
+  onSubmit: () => Promise<void>;
+}) {
+  const [reported, setReported] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handlePress = async () => {
+    setError("");
+    if (!currentUser) {
+      onRequireAuth();
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onSubmit();
+      setReported(true);
+    } catch (reportError) {
+      setError(reportError instanceof Error ? reportError.message : "举报提交失败，请稍后再试。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <View>
+      <TouchableOpacity
+        activeOpacity={0.86}
+        disabled={submitting || reported}
+        style={[styles.reportButton, reported && styles.reportButtonDone]}
+        onPress={handlePress}
+      >
+        <Shield size={17} color={reported ? palette.green : palette.red} />
+        <Text style={[styles.reportButtonText, reported && styles.reportButtonDoneText]}>
+          {reported ? "已收到举报，我们会尽快审核" : submitting ? "正在提交举报..." : label}
+        </Text>
+      </TouchableOpacity>
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+    </View>
   );
 }
 
@@ -3483,6 +3608,34 @@ const styles = StyleSheet.create({
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: palette.faint
+  },
+  backendPanel: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.faint,
+    backgroundColor: palette.panel,
+    gap: 10
+  },
+  backendPanelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  backendStatusRow: {
+    minHeight: 30,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  backendStatusValue: {
+    flexShrink: 1,
+    textAlign: "right",
+    fontSize: 13,
+    fontWeight: "900",
+    color: palette.ink
   },
   settingsRow: {
     minHeight: 58,
