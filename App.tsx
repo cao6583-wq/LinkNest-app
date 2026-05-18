@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   SafeAreaView,
   ScrollView,
+  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -21,7 +22,6 @@ import {
   Clock3,
   Grid2X2,
   Heart,
-  Home,
   List,
   Map,
   MapPin,
@@ -94,24 +94,24 @@ type Screen =
   | { name: "auth"; mode?: AuthMode; message?: string };
 
 const palette = {
-  background: "#F7FAF4",
+  background: "#F3FAF6",
   panel: "#FFFFFF",
-  ink: "#17231A",
-  muted: "#6F776F",
-  faint: "#E6EBE2",
-  green: "#2F7D45",
-  greenDark: "#1F6334",
-  greenSoft: "#EAF4E9",
-  gold: "#D99A24",
-  red: "#C25C4A",
-  blue: "#316C82"
+  ink: "#1A322D",
+  muted: "#91AAA3",
+  faint: "#E4EFEB",
+  green: "#479987",
+  greenDark: "#17352F",
+  greenSoft: "#E6F5F0",
+  gold: "#CDA15B",
+  red: "#D95E63",
+  blue: "#7EAFC0"
 };
 
 const tabs = [
-  { key: "discover", label: "发现", icon: Home },
+  { key: "discover", label: "附近", icon: MapPin },
   { key: "shelf", label: "书架", icon: BookOpen },
+  { key: "neighbors", label: "社区", icon: Users },
   { key: "messages", label: "消息", icon: MessageCircle },
-  { key: "neighbors", label: "邻居", icon: Users },
   { key: "me", label: "我的", icon: UserRound }
 ] satisfies Array<{ key: TabKey; label: string; icon: LucideIcon }>;
 
@@ -119,7 +119,7 @@ export default function App() {
   const { width } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<TabKey>("discover");
   const [screen, setScreen] = useState<Screen>({ name: "tabs" });
-  const [discoverMode, setDiscoverMode] = useState<DiscoverMode>("map");
+  const [discoverMode, setDiscoverMode] = useState<DiscoverMode>("list");
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<string[]>(["hundred-years"]);
   const [friendships, setFriendships] = useState<Friendship[]>(demoFriendships);
@@ -672,25 +672,36 @@ function DiscoverScreen({
   onOpenBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
 }) {
-  const categories = ["全部", "文学", "小说", "童书"];
+  const categories = ["全部", "小说", "文学", "社科", "商业", "心理"];
   const radiusOptions = [1, 3, 5, 10];
 
   return (
     <View style={styles.screen}>
-      <Header
-        title="附近图书"
-        subtitle={`${displayBooks.length} 本可借 · ${nearbyQuery.radiusKm}km 内`}
-        right={(
+      <View style={styles.discoverHeader}>
+        <View style={styles.discoverTitleBlock}>
+          <Text style={styles.discoverHeaderTitle}>
+            <Text style={styles.discoverTitleAccent}>附近有 </Text>
+            {displayBooks.length} 本书
+          </Text>
+          <TouchableOpacity activeOpacity={0.86} style={styles.locationPill} onPress={onUseCurrentLocation}>
+            <View style={styles.locationPulse} />
+            <Text style={styles.locationPillText}>徐汇区</Text>
+            <View style={styles.locationPillDivider} />
+            <Text style={styles.locationPillText}>{nearbyQuery.radiusKm} km</Text>
+            <Text style={styles.locationPillChevron}>⌄</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.discoverHeaderRight}>
           <SegmentedIconControl
             value={mode}
             options={[
-              { value: "map", icon: Map, label: "地图" },
-              { value: "list", icon: List, label: "列表" }
+              { value: "list", icon: List, label: "列表" },
+              { value: "map", icon: Map, label: "地图" }
             ]}
             onChange={(next) => setMode(next as DiscoverMode)}
           />
-        )}
-      />
+        </View>
+      </View>
 
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
@@ -698,12 +709,11 @@ function DiscoverScreen({
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="搜索书名、作者、分类"
+            placeholder="搜索书名、作者或邻里"
             placeholderTextColor="#9EA69D"
             style={styles.searchInput}
           />
         </View>
-        <IconButton icon={MapPin} label="使用当前位置" onPress={onUseCurrentLocation} />
       </View>
 
       <View style={styles.filterRow}>
@@ -717,7 +727,7 @@ function DiscoverScreen({
         ))}
       </View>
 
-      <View style={styles.filterRowTight}>
+      <View style={styles.radiusRowHidden}>
         {radiusOptions.map((radiusKm) => (
           <Chip
             key={radiusKm}
@@ -737,7 +747,7 @@ function DiscoverScreen({
         />
       )}
 
-      <View style={styles.locationHint}>
+      <View style={styles.locationHintCompact}>
         <MapPin size={14} color={palette.muted} />
         <Text style={styles.locationHintText}>{locationMessage}</Text>
       </View>
@@ -2206,23 +2216,64 @@ function BookListItem({
   onToggleFavorite?: () => void;
 }) {
   const owner = getUser(book.ownerId, users);
+  const statusLabelText = book.status === "available"
+    ? owner.isFriend ? "仅好友" : "公开"
+    : "借阅中";
+  const statusTone = book.status === "available"
+    ? owner.isFriend ? "friend" : "public"
+    : "club";
+
   return (
     <TouchableOpacity activeOpacity={0.9} style={[styles.bookListItem, compact && styles.bookListItemCompact]} onPress={onPress}>
-      <BookCover book={book} size="small" />
-      <View style={styles.flex}>
-        <Text style={styles.cardTitle}>{book.title}</Text>
-        <Text style={styles.mutedText}>{book.author} · {owner.displayName}</Text>
-        <Text style={book.status === "available" ? styles.greenText : styles.goldText}>
-          {formatApproxDistance(book.distanceKm)} · {book.status === "available" ? "可借" : "借阅中"}
-        </Text>
+      <BookCover book={book} size={compact ? "small" : "medium"} />
+      <View style={styles.bookCardContent}>
+        <View style={styles.bookCardHeader}>
+          <View style={styles.flex}>
+            <Text numberOfLines={1} style={styles.bookItemTitle}>{book.title}</Text>
+            <Text numberOfLines={1} style={styles.bookAuthorText}>{book.author}</Text>
+          </View>
+          {!compact && (
+            <View style={[
+              styles.visibilityBadge,
+              statusTone === "friend" && styles.visibilityBadgeFriend,
+              statusTone === "club" && styles.visibilityBadgeClub
+            ]}>
+              <Text style={[
+                styles.visibilityBadgeText,
+                statusTone === "friend" && styles.visibilityBadgeTextFriend,
+                statusTone === "club" && styles.visibilityBadgeTextClub
+              ]}>{statusLabelText}</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.bookMetaRow}>
+          <Text style={styles.bookMetaChip}>{book.category}</Text>
+          <Text style={styles.bookMetaDot}>·</Text>
+          <Text style={styles.bookMetaText}>{book.condition}</Text>
+        </View>
+
+        <View style={styles.bookCardFooter}>
+          <View style={styles.distanceInline}>
+            <Text style={styles.pinEmoji}>📍</Text>
+            <Text style={styles.distanceText}>{formatCardDistance(book.distanceKm)}</Text>
+          </View>
+          <View style={styles.cardDivider} />
+          <View style={styles.ownerInline}>
+            <Avatar user={owner} size={28} />
+            <Text numberOfLines={1} style={styles.ownerNameText}>{owner.displayName}</Text>
+            <View style={styles.ownerRatingInline}>
+              <Star size={14} color={palette.gold} />
+              <Text style={styles.ownerRatingText}>{owner.rating.toFixed(1)}</Text>
+            </View>
+          </View>
+        </View>
       </View>
-      {onToggleFavorite ? (
+      {compact && onToggleFavorite ? (
         <TouchableOpacity accessibilityLabel="收藏" activeOpacity={0.82} style={styles.listIconButton} onPress={onToggleFavorite}>
           <Heart size={18} color={isFavorite ? palette.red : palette.muted} fill={isFavorite ? palette.red : "transparent"} />
         </TouchableOpacity>
-      ) : (
-        <Avatar user={owner} size={32} />
-      )}
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -2534,6 +2585,10 @@ function formatApproxDistance(distanceKm: number): string {
   return `约 ${Math.round(distanceKm * 2) / 2}km`;
 }
 
+function formatCardDistance(distanceKm: number): string {
+  return `${Math.max(0.1, Math.round(distanceKm * 10) / 10).toFixed(1)} km`;
+}
+
 function privacyLevelLabel(level: "public" | "friends" | "private"): string {
   if (level === "friends") return "仅好友";
   if (level === "private") return "仅自己";
@@ -2549,21 +2604,32 @@ const styles = StyleSheet.create({
     flex: 1,
     alignSelf: "center",
     width: "100%",
-    maxWidth: 520,
-    backgroundColor: palette.background
+    height: "100%",
+    minHeight: 0,
+    maxWidth: 430,
+    backgroundColor: palette.background,
+    position: "relative"
   },
   appFrameWide: {
-    marginVertical: 18,
-    borderRadius: 28,
+    marginVertical: 28,
+    borderRadius: 44,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: palette.faint
+    borderColor: "rgba(210,228,222,0.82)",
+    shadowColor: "#8AA89E",
+    shadowOpacity: 0.24,
+    shadowRadius: 34,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 8
   },
   content: {
-    flex: 1
+    flex: 1,
+    minHeight: 0,
+    paddingBottom: 82
   },
   screen: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: palette.background
   },
   header: {
@@ -2609,27 +2675,31 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   bottomTabs: {
-    height: 74,
-    paddingHorizontal: 10,
-    paddingTop: 8,
+    position: Platform.OS === "web" ? "fixed" as never : "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 82,
+    paddingHorizontal: 18,
+    paddingTop: 10,
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    backgroundColor: palette.panel,
+    backgroundColor: "rgba(255,255,255,0.96)",
     borderTopWidth: 1,
     borderTopColor: palette.faint
   },
   tabButton: {
-    width: 70,
-    height: 58,
+    width: 58,
+    height: 62,
     alignItems: "center",
     justifyContent: "center",
-    gap: 4
+    gap: 6
   },
   tabText: {
-    fontSize: 12,
-    color: "#8A9388",
-    fontWeight: "700"
+    fontSize: 13,
+    color: "#A6B9B3",
+    fontWeight: "800"
   },
   tabTextActive: {
     color: palette.green
@@ -2647,32 +2717,100 @@ const styles = StyleSheet.create({
   },
   segmented: {
     flexDirection: "row",
-    padding: 3,
-    borderRadius: 14,
-    backgroundColor: "#EEF3EC",
-    gap: 2
+    padding: 5,
+    borderRadius: 28,
+    backgroundColor: "#EDF4F1",
+    gap: 4
   },
   segmentButton: {
-    width: 36,
-    height: 34,
-    borderRadius: 11,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center"
   },
   segmentButtonActive: {
-    backgroundColor: palette.panel
+    backgroundColor: palette.panel,
+    shadowColor: "#A0B8B1",
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2
+  },
+  discoverHeader: {
+    minHeight: 150,
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 14,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 14
+  },
+  discoverTitleBlock: {
+    flex: 1
+  },
+  discoverHeaderTitle: {
+    fontSize: 28,
+    lineHeight: 36,
+    fontWeight: "900",
+    color: palette.greenDark,
+    letterSpacing: 0
+  },
+  discoverTitleAccent: {
+    color: palette.green,
+    fontWeight: "800"
+  },
+  discoverHeaderRight: {
+    paddingBottom: 2
+  },
+  locationPill: {
+    alignSelf: "flex-start",
+    minHeight: 38,
+    marginTop: 8,
+    paddingLeft: 14,
+    paddingRight: 12,
+    borderRadius: 19,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    backgroundColor: palette.greenSoft
+  },
+  locationPulse: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: palette.red,
+    borderWidth: 3,
+    borderColor: "#69B39D"
+  },
+  locationPillText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: palette.green
+  },
+  locationPillDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: "#B8D8CF"
+  },
+  locationPillChevron: {
+    marginTop: -2,
+    fontSize: 16,
+    fontWeight: "900",
+    color: palette.green
   },
   searchRow: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     flexDirection: "row",
     gap: 10,
     alignItems: "center"
   },
   searchBox: {
     flex: 1,
-    height: 46,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+    height: 64,
+    paddingHorizontal: 22,
+    borderRadius: 32,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint,
@@ -2682,7 +2820,8 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 17,
+    fontWeight: "800",
     color: palette.ink,
   },
   iconButton: {
@@ -2696,11 +2835,15 @@ const styles = StyleSheet.create({
     borderColor: palette.faint
   },
   filterRow: {
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 18,
     flexDirection: "row",
-    gap: 8,
+    gap: 11,
     flexWrap: "wrap"
+  },
+  radiusRowHidden: {
+    display: "none"
   },
   filterRowTight: {
     paddingHorizontal: 20,
@@ -2791,6 +2934,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6
   },
+  locationHintCompact: {
+    display: "none"
+  },
   locationHintText: {
     flex: 1,
     fontSize: 12,
@@ -2799,9 +2945,9 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   chip: {
-    height: 32,
-    paddingHorizontal: 13,
-    borderRadius: 16,
+    height: 44,
+    paddingHorizontal: 21,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.panel,
@@ -2809,20 +2955,20 @@ const styles = StyleSheet.create({
     borderColor: palette.faint
   },
   chipActive: {
-    backgroundColor: palette.green,
-    borderColor: palette.green
+    backgroundColor: palette.greenDark,
+    borderColor: palette.greenDark
   },
   chipText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: palette.muted
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#6E837D"
   },
   chipTextActive: {
     color: "#FFFFFF"
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 24
+    paddingHorizontal: 22,
+    paddingBottom: 26
   },
   mapPanel: {
     height: 360,
@@ -2918,19 +3064,22 @@ const styles = StyleSheet.create({
     color: palette.ink
   },
   bookListItem: {
-    minHeight: 96,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 20,
+    minHeight: 150,
+    marginBottom: 16,
+    padding: 13,
+    borderRadius: 22,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12
+    alignItems: "stretch",
+    gap: 13
   },
   bookListItemCompact: {
-    marginBottom: 0
+    minHeight: 96,
+    marginBottom: 0,
+    alignItems: "center",
+    gap: 12
   },
   listIconButton: {
     width: 38,
@@ -2942,7 +3091,7 @@ const styles = StyleSheet.create({
   },
   cover: {
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
     paddingVertical: 9,
     paddingHorizontal: 7,
     borderRadius: 8,
@@ -2957,8 +3106,9 @@ const styles = StyleSheet.create({
     height: 78
   },
   coverMedium: {
-    width: 78,
-    height: 104
+    width: 92,
+    height: 130,
+    borderRadius: 7
   },
   coverLarge: {
     width: 164,
@@ -2989,12 +3139,12 @@ const styles = StyleSheet.create({
   avatar: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#E7EFE3",
+    backgroundColor: "#94B7C2",
     borderWidth: 2,
     borderColor: "#FFFFFF"
   },
   avatarText: {
-    color: palette.greenDark,
+    color: "#FFFFFF",
     fontWeight: "900"
   },
   flex: {
@@ -3004,6 +3154,133 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     color: palette.ink
+  },
+  bookCardContent: {
+    flex: 1,
+    justifyContent: "space-between",
+    minWidth: 0
+  },
+  bookCardHeader: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10
+  },
+  bookItemTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "900",
+    color: palette.ink
+  },
+  bookAuthorText: {
+    marginTop: 2,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "800",
+    color: palette.muted
+  },
+  bookMetaRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7
+  },
+  bookMetaChip: {
+    paddingHorizontal: 11,
+    height: 27,
+    lineHeight: 27,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "#EFF5F2",
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#7D948E"
+  },
+  bookMetaDot: {
+    fontSize: 18,
+    color: "#B7C8C3",
+    fontWeight: "900"
+  },
+  bookMetaText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#6F8981"
+  },
+  bookCardFooter: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9
+  },
+  distanceInline: {
+    minWidth: 70,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  pinEmoji: {
+    fontSize: 19,
+    lineHeight: 22
+  },
+  distanceText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: palette.green
+  },
+  cardDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: palette.faint
+  },
+  ownerInline: {
+    flex: 1,
+    minWidth: 104,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  ownerNameText: {
+    flex: 1,
+    minWidth: 38,
+    fontSize: 13,
+    fontWeight: "900",
+    color: palette.ink
+  },
+  ownerRatingInline: {
+    marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3
+  },
+  ownerRatingText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: palette.gold
+  },
+  visibilityBadge: {
+    minHeight: 26,
+    paddingHorizontal: 10,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E5F5EF"
+  },
+  visibilityBadgeFriend: {
+    backgroundColor: "#EAF6FB"
+  },
+  visibilityBadgeClub: {
+    backgroundColor: "#FEF0EB"
+  },
+  visibilityBadgeText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: palette.green
+  },
+  visibilityBadgeTextFriend: {
+    color: palette.blue
+  },
+  visibilityBadgeTextClub: {
+    color: "#D78B76"
   },
   mutedText: {
     fontSize: 13,
