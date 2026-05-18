@@ -14,6 +14,20 @@ LinkNest is a neighborhood book-sharing app prototype built with Expo, React Nat
 - `npm run build` builds the web app.
 - `npm run check` runs typecheck and build.
 
+## Repository
+
+GitHub repository:
+
+```text
+https://github.com/cao6583-wq/LinkNest-app
+```
+
+The `main` branch runs GitHub Actions CI on every push and pull request. CI installs dependencies with `npm ci`, then runs:
+
+```bash
+npm run check
+```
+
 ## Local Setup
 
 ```bash

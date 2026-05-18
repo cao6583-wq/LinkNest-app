@@ -60,7 +60,14 @@ npm run start
 
 ### 3. GitHub
 
-建议在 Beta 前推到 GitHub，目的不是手机测试，而是：
+已完成：
+
+- 代码已推送到 `https://github.com/cao6583-wq/LinkNest-app`
+- 默认分支为 `main`
+- 初始提交包含 App 原型源码、Supabase schema、文档和 `package-lock.json`
+- 已添加 GitHub Actions CI：每次 push / pull request 自动执行 `npm ci` 和 `npm run check`
+
+推到 GitHub 的目的不是手机测试，而是：
 
 - 备份代码
 - 版本管理
@@ -169,13 +176,20 @@ Beta 前至少确认：
 ```bash
 npm run typecheck
 npm run build
+npm run check
 curl -I http://127.0.0.1:5176/
 curl -I http://127.0.0.1:5177/
 ```
+
+版本管理已完成：
+
+- `main` 已推送到 GitHub。
+- GitHub Actions CI 配置已加入仓库。
 
 仍需手动验证：
 
 - 手机浏览器布局
 - Expo Go 原生体验
 - 真实 Supabase 写入和 RLS
-- GitHub / 部署流水线
+- GitHub Actions 首次远程运行结果
+- Web Beta 部署流水线
