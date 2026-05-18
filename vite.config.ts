@@ -8,6 +8,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     base: isGitHubPages ? "/LinkNest-app/" : "/",
+    server: {
+      allowedHosts: true
+    },
     define: {
       "process.env.EXPO_PUBLIC_SUPABASE_URL": JSON.stringify(env.EXPO_PUBLIC_SUPABASE_URL ?? ""),
       "process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY": JSON.stringify(env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "")
