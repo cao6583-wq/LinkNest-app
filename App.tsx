@@ -885,16 +885,27 @@ function BookDetailScreen({
 
   return (
     <View style={styles.screen}>
-      <TopBar title="书籍详情" onBack={onBack} />
+      <TopBar title="图书详情" onBack={onBack} />
       <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.centered}>
-          <BookCover book={book} size="large" />
+        <View style={styles.detailHero}>
+          <View style={styles.detailCoverStage}>
+            <BookCover book={book} size="large" />
+          </View>
+          <View style={styles.detailHeroCopy}>
+            <View style={styles.detailBadgeRow}>
+              <Text style={styles.detailCategoryBadge}>{book.category}</Text>
+              <Text style={[styles.detailStatusBadge, unavailable && styles.detailStatusBadgeMuted]}>
+                {book.status === "available" ? "可借" : "借阅中"}
+              </Text>
+            </View>
+            <Text style={styles.detailHeroTitle}>{book.title}</Text>
+            <Text style={styles.detailSubtitle}>{book.author}</Text>
+          </View>
         </View>
-        <Text style={styles.detailTitle}>{book.title}</Text>
-        <Text style={styles.detailSubtitle}>{book.author}</Text>
-        <View style={styles.metaRow}>
+
+        <View style={styles.detailMetaPanel}>
           <MetaPill icon={MapPin} label={formatApproxDistance(book.distanceKm)} />
-          <MetaPill icon={BookMarked} label={book.status === "available" ? "可借" : "借阅中"} />
+          <MetaPill icon={BookMarked} label={book.condition} />
           <MetaPill icon={Star} label={owner.rating.toFixed(1)} />
         </View>
 
@@ -903,12 +914,12 @@ function BookDetailScreen({
           <Text style={styles.privacyNoticeText}>为保护邻居隐私，位置只显示大致距离。具体交接地点会在双方确认借阅后沟通。</Text>
         </View>
 
-        <View style={styles.infoBand}>
+        <View style={styles.detailPanel}>
           <Text style={styles.sectionHeading}>书籍简介</Text>
           <Text style={styles.bodyText}>{book.description}</Text>
         </View>
 
-        <View style={styles.infoBand}>
+        <View style={styles.detailPanel}>
           <Text style={styles.sectionHeading}>书籍信息</Text>
           <InfoLine label="新旧状态" value={book.condition} />
           <InfoLine label="类别" value={book.category} />
@@ -917,10 +928,11 @@ function BookDetailScreen({
         </View>
 
         <TouchableOpacity activeOpacity={0.88} style={styles.lenderRow} onPress={onOpenLender}>
-          <Avatar user={owner} size={48} />
-          <View style={styles.flex}>
+          <Avatar user={owner} size={52} />
+          <View style={styles.lenderInfo}>
             <Text style={styles.cardTitle}>{owner.displayName}</Text>
             <Text style={styles.mutedText}>共享 {owner.sharedCount} 本书 · {formatApproxDistance(owner.distanceKm)}</Text>
+            <Text numberOfLines={1} style={styles.lenderBioText}>{owner.neighborhood}</Text>
           </View>
           <View style={styles.ratingBadge}>
             <Star size={14} color={palette.gold} fill={palette.gold} />
@@ -928,7 +940,7 @@ function BookDetailScreen({
           </View>
         </TouchableOpacity>
 
-        <View style={styles.infoBand}>
+        <View style={styles.detailPanel}>
           <SectionTitle title="用户评论" action="查看全部" />
           <View style={styles.reviewRow}>
             <Avatar user={getUser("bob", users)} size={36} />
@@ -2679,6 +2691,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    width: "100%",
+    maxWidth: 430,
+    marginLeft: "auto",
+    marginRight: "auto",
     height: 82,
     paddingHorizontal: 18,
     paddingTop: 10,
@@ -3323,12 +3339,75 @@ const styles = StyleSheet.create({
     color: palette.green
   },
   detailContent: {
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingHorizontal: 22,
+    paddingTop: 18,
     paddingBottom: 104
   },
-  centered: {
+  detailHero: {
+    minHeight: 360,
+    paddingTop: 24,
+    paddingHorizontal: 18,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#E7F5EF",
+    borderWidth: 1,
+    borderColor: "#D5EAE2",
+    overflow: "hidden"
+  },
+  detailCoverStage: {
+    width: "100%",
+    minHeight: 234,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  detailHeroCopy: {
+    width: "100%",
+    paddingTop: 14,
+    paddingBottom: 22,
     alignItems: "center"
+  },
+  detailBadgeRow: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    flexWrap: "wrap"
+  },
+  detailCategoryBadge: {
+    minHeight: 30,
+    paddingHorizontal: 13,
+    paddingTop: 6,
+    borderRadius: 15,
+    overflow: "hidden",
+    backgroundColor: palette.panel,
+    color: palette.green,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  detailStatusBadge: {
+    minHeight: 30,
+    paddingHorizontal: 13,
+    paddingTop: 6,
+    borderRadius: 15,
+    overflow: "hidden",
+    backgroundColor: palette.greenDark,
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  detailStatusBadgeMuted: {
+    backgroundColor: "#94A7A1"
+  },
+  detailHeroTitle: {
+    marginTop: 12,
+    fontSize: 27,
+    lineHeight: 34,
+    fontWeight: "900",
+    color: palette.greenDark,
+    textAlign: "center",
+    letterSpacing: 0
   },
   detailTitle: {
     marginTop: 14,
@@ -3341,13 +3420,23 @@ const styles = StyleSheet.create({
   detailSubtitle: {
     marginTop: 4,
     fontSize: 15,
-    color: palette.muted
+    color: palette.muted,
+    fontWeight: "800",
+    textAlign: "center"
   },
-  metaRow: {
+  detailMetaPanel: {
     marginTop: 16,
+    minHeight: 56,
+    padding: 10,
+    borderRadius: 24,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8
+    gap: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.panel,
+    borderWidth: 1,
+    borderColor: palette.faint
   },
   metaPill: {
     minHeight: 32,
@@ -3369,6 +3458,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: palette.faint
   },
+  detailPanel: {
+    marginTop: 16,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: palette.panel,
+    borderWidth: 1,
+    borderColor: palette.faint
+  },
   infoLine: {
     minHeight: 36,
     flexDirection: "row",
@@ -3381,16 +3478,27 @@ const styles = StyleSheet.create({
     color: palette.ink
   },
   lenderRow: {
-    marginTop: 20,
-    minHeight: 74,
-    padding: 12,
-    borderRadius: 20,
+    marginTop: 16,
+    minHeight: 86,
+    padding: 14,
+    borderRadius: 22,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint
+  },
+  lenderInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2
+  },
+  lenderBioText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
+    color: palette.green
   },
   ratingBadge: {
     height: 30,
@@ -3419,10 +3527,14 @@ const styles = StyleSheet.create({
     gap: 10
   },
   actionBar: {
-    position: "absolute",
+    position: Platform.OS === "web" ? "fixed" as never : "absolute",
     left: 0,
     right: 0,
     bottom: 0,
+    width: "100%",
+    maxWidth: 430,
+    marginLeft: "auto",
+    marginRight: "auto",
     minHeight: 82,
     paddingHorizontal: 20,
     paddingTop: 12,
