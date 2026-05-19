@@ -1391,17 +1391,34 @@ function MessagesScreen({
   onOpenBook: (bookId: string) => void;
 }) {
   const unreadCount = notifications.filter((notification) => notification.unread).length;
+  const requestCount = notifications.filter((notification) => notification.requestId).length;
 
   return (
     <View style={styles.screen}>
-      <Header title="消息" subtitle={`${unreadCount} 条未读 · 借阅、好友和系统通知`} />
-      <View style={styles.filterRow}>
-        <Chip label="全部" active />
-        <Chip label="借阅" />
-        <Chip label="好友" />
-        <Chip label="通知" />
-      </View>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.messageContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.messageHero}>
+          <View style={styles.messageHeroIcon}>
+            <MessageCircle size={24} color="#FFFFFF" />
+          </View>
+          <View style={styles.messageHeroCopy}>
+            <Text style={styles.shelfEyebrow}>Inbox</Text>
+            <Text style={styles.shelfHeroTitle}>消息</Text>
+            <Text style={styles.shelfHeroSubtitle}>{unreadCount} 条未读 · {requestCount} 条借阅动态</Text>
+          </View>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.messageFilterScroller}
+          contentContainerStyle={styles.messageFilterContent}
+        >
+          <Chip label="全部" active />
+          <Chip label="借阅" />
+          <Chip label="好友" />
+          <Chip label="通知" />
+        </ScrollView>
+
         {notifications.length ? (
           notifications.map((notification) => {
             const user = notification.userId ? getUser(notification.userId, users) : mockUsers[0];
@@ -1414,14 +1431,16 @@ function MessagesScreen({
               <TouchableOpacity
                 key={notification.id}
                 activeOpacity={0.88}
-                style={styles.threadRow}
+                style={[styles.threadRow, notification.unread && styles.threadRowUnread]}
                 onPress={() => notification.bookId && onOpenBook(notification.bookId)}
               >
-                {book ? <BookCover book={book} size="tiny" /> : <Avatar user={user} size={48} />}
+                <View style={styles.threadMedia}>
+                  {book ? <BookCover book={book} size="tiny" /> : <Avatar user={user} size={44} />}
+                </View>
                 <View style={styles.flex}>
                   <View style={styles.threadTitleRow}>
-                    <Text style={styles.cardTitle}>{notification.title}</Text>
-                    <Text style={styles.mutedText}>{notification.time}</Text>
+                    <Text numberOfLines={1} style={styles.cardTitle}>{notification.title}</Text>
+                    <Text style={styles.threadTimeText}>{notification.time}</Text>
                   </View>
                   <Text numberOfLines={2} style={styles.bodyText}>{notification.body}</Text>
                   {request && (
@@ -1439,7 +1458,13 @@ function MessagesScreen({
         )}
 
         <View style={styles.chatPreview}>
-          <Text style={styles.sectionHeading}>Alice 的聊天</Text>
+          <View style={styles.chatPreviewHeader}>
+            <Avatar user={getUser("alice", users)} size={38} />
+            <View style={styles.flex}>
+              <Text style={styles.sectionHeading}>Alice 的聊天</Text>
+              <Text style={styles.mutedText}>借阅确认后继续沟通交接地点</Text>
+            </View>
+          </View>
           <View style={styles.messageBubbleInbound}>
             <Text style={styles.bodyText}>你想借这三本书吗？</Text>
           </View>
@@ -1544,16 +1569,34 @@ function NeighborsScreen({
     ? friendships.filter((friendship) => friendship.receiverId === currentUser.id && friendship.status === "pending")
     : [];
   const visibleUsers = users.filter((user) => user.id !== currentUser?.id);
+  const friendCount = visibleUsers.filter((user) => relationshipFor(currentUser, user, friendships) === "friends").length;
 
   return (
     <View style={styles.screen}>
-      <Header title="邻居" subtitle="附近书友和好友" />
-      <View style={styles.filterRow}>
-        <Chip label="好友" active />
-        <Chip label="附近" />
-        <Chip label="可借多" />
-      </View>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.neighborContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.neighborHero}>
+          <View style={styles.shelfHeroCopy}>
+            <Text style={styles.shelfEyebrow}>Community</Text>
+            <Text style={styles.shelfHeroTitle}>社区</Text>
+            <Text style={styles.shelfHeroSubtitle}>{visibleUsers.length} 位附近书友 · {friendCount} 位好友</Text>
+          </View>
+          <View style={styles.neighborHeroIcon}>
+            <Users size={24} color="#FFFFFF" />
+          </View>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.messageFilterScroller}
+          contentContainerStyle={styles.messageFilterContent}
+        >
+          <Chip label="好友" active />
+          <Chip label="附近" />
+          <Chip label="可借多" />
+          <Chip label="高评分" />
+        </ScrollView>
+
         {pendingReceived.length > 0 && (
           <>
             <SectionTitle title="好友申请" />
@@ -1561,7 +1604,7 @@ function NeighborsScreen({
               const requester = getUser(friendship.requesterId, users);
               return (
                 <View key={friendship.id} style={styles.friendRequestCard}>
-                  <Avatar user={requester} size={46} />
+                  <Avatar user={requester} size={44} />
                   <View style={styles.flex}>
                     <Text style={styles.cardTitle}>{requester.displayName}</Text>
                     <Text style={styles.mutedText}>想加你为好友 · {friendship.dateLabel}</Text>
@@ -1585,13 +1628,23 @@ function NeighborsScreen({
 
           return (
             <TouchableOpacity key={user.id} activeOpacity={0.88} style={styles.neighborRow} onPress={() => onOpenLender(user.id)}>
-              <Avatar user={user} size={52} />
-              <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{user.displayName}</Text>
-                <Text style={styles.mutedText}>{formatApproxDistance(user.distanceKm)} · 共享 {user.sharedCount} 本书</Text>
-                <View style={styles.ratingInline}>
-                  <Star size={14} color={palette.gold} fill={palette.gold} />
-                  <Text style={styles.ratingText}>{user.rating}</Text>
+              <View style={styles.neighborAvatarWrap}>
+                <Avatar user={user} size={54} />
+              </View>
+              <View style={styles.neighborInfo}>
+                <View style={styles.threadTitleRow}>
+                  <Text numberOfLines={1} style={styles.cardTitle}>{user.displayName}</Text>
+                  <View style={styles.neighborDistanceBadge}>
+                    <Text style={styles.neighborDistanceText}>{formatApproxDistance(user.distanceKm)}</Text>
+                  </View>
+                </View>
+                <Text numberOfLines={1} style={styles.mutedText}>{user.neighborhood}</Text>
+                <View style={styles.neighborMetaRow}>
+                  <View style={styles.ratingInline}>
+                    <Star size={14} color={palette.gold} fill={palette.gold} />
+                    <Text style={styles.ratingText}>{user.rating}</Text>
+                  </View>
+                  <Text style={styles.neighborRelationText}>共享 {user.sharedCount} 本</Text>
                 </View>
               </View>
               <TouchableOpacity
@@ -3946,11 +3999,49 @@ const styles = StyleSheet.create({
   borrowDangerText: {
     color: palette.red
   },
+  messageContent: {
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 104
+  },
+  messageHero: {
+    minHeight: 112,
+    padding: 18,
+    borderRadius: 28,
+    backgroundColor: "#E7F5EF",
+    borderWidth: 1,
+    borderColor: "#D5EAE2",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14
+  },
+  messageHeroIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.green
+  },
+  messageHeroCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  messageFilterScroller: {
+    marginTop: 14,
+    marginBottom: 12,
+    maxHeight: 40
+  },
+  messageFilterContent: {
+    paddingRight: 18,
+    flexDirection: "row",
+    gap: 9
+  },
   threadRow: {
-    minHeight: 78,
+    minHeight: 86,
     marginBottom: 10,
     padding: 12,
-    borderRadius: 20,
+    borderRadius: 22,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint,
@@ -3958,10 +4049,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12
   },
+  threadRowUnread: {
+    borderColor: "#CFE8DF",
+    backgroundColor: "#FBFFFD"
+  },
+  threadMedia: {
+    width: 48,
+    alignItems: "center"
+  },
   threadTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    gap: 10
+  },
+  threadTimeText: {
+    flexShrink: 0,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
+    color: palette.muted
   },
   messageStatusLine: {
     alignSelf: "flex-start",
@@ -3986,9 +4093,16 @@ const styles = StyleSheet.create({
   },
   chatPreview: {
     marginTop: 10,
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    borderTopColor: palette.faint
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: palette.faint,
+    backgroundColor: palette.panel
+  },
+  chatPreviewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
   },
   messageBubbleInbound: {
     alignSelf: "flex-start",
@@ -4015,17 +4129,75 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8
   },
+  neighborContent: {
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 104
+  },
+  neighborHero: {
+    minHeight: 112,
+    padding: 18,
+    borderRadius: 28,
+    backgroundColor: "#E7F5EF",
+    borderWidth: 1,
+    borderColor: "#D5EAE2",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14
+  },
+  neighborHeroIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.green
+  },
   neighborRow: {
-    minHeight: 82,
+    minHeight: 94,
     marginBottom: 12,
-    padding: 12,
-    borderRadius: 20,
+    padding: 13,
+    borderRadius: 22,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint,
     flexDirection: "row",
     alignItems: "center",
     gap: 12
+  },
+  neighborAvatarWrap: {
+    width: 58,
+    alignItems: "center"
+  },
+  neighborInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3
+  },
+  neighborDistanceBadge: {
+    minHeight: 24,
+    paddingHorizontal: 9,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.greenSoft
+  },
+  neighborDistanceText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: palette.green
+  },
+  neighborMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  neighborRelationText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "900",
+    color: palette.muted
   },
   friendRequestCard: {
     minHeight: 78,
