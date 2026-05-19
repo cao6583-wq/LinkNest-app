@@ -1714,13 +1714,13 @@ function MeScreen({
 
   return (
     <View style={styles.screen}>
-      <Header title="我的" subtitle="账户、隐私和设置" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.meHeader}>
-          <Avatar user={me} size={68} />
-          <View style={styles.flex}>
-            <Text style={styles.detailTitle}>{user.displayName}</Text>
-            <Text style={styles.mutedText}>{user.email}{user.isDemo ? " · 演示登录" : ""}</Text>
+      <ScrollView contentContainerStyle={styles.meContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.meHero}>
+          <Avatar user={me} size={72} />
+          <View style={styles.meHeroCopy}>
+            <Text style={styles.shelfEyebrow}>Profile</Text>
+            <Text style={styles.shelfHeroTitle}>{user.displayName}</Text>
+            <Text numberOfLines={1} style={styles.shelfHeroSubtitle}>{user.email}{user.isDemo ? " · 演示登录" : ""}</Text>
           </View>
         </View>
 
@@ -1730,16 +1730,21 @@ function MeScreen({
           <StatusTile label="评价" value="24" />
         </View>
 
-        <SettingsRow icon={MapPin} label="我的地址" value={`${visibleRadius}km 范围`} />
-        <SettingsRow icon={Shield} label="隐私设置" value={privacyLevelLabel(privacyLevel)} />
-        <SettingsRow icon={Clock3} label="借阅历史" value="24 条" />
-        <SettingsRow icon={Bell} label="通知设置" value="已开启" />
-        <SettingsRow icon={Settings} label="关于 LinkNest" value="v1.0.0" />
+        <View style={styles.mePanel}>
+          <SettingsRow icon={MapPin} label="我的地址" value={`${visibleRadius}km 范围`} />
+          <SettingsRow icon={Shield} label="隐私设置" value={privacyLevelLabel(privacyLevel)} />
+          <SettingsRow icon={Clock3} label="借阅历史" value="24 条" />
+          <SettingsRow icon={Bell} label="通知设置" value="已开启" />
+          <SettingsRow icon={Settings} label="关于 LinkNest" value="v1.0.0" />
+        </View>
 
         <BackendStatusPanel user={user} catalogSource={catalogSource} />
 
         <View style={styles.privacyPanel}>
-          <Text style={styles.sectionHeading}>隐私与安全</Text>
+          <View style={styles.backendPanelHeader}>
+            <Shield size={18} color={palette.green} />
+            <Text style={styles.sectionHeading}>隐私与安全</Text>
+          </View>
           <Text style={styles.bodyText}>你的精确地址不会公开。附近发现页只使用模糊距离，交接信息只建议在借阅确认后沟通。</Text>
 
           <Text style={styles.inputLabel}>资料可见性</Text>
@@ -1837,12 +1842,15 @@ function AuthScreen({
       <ScrollView contentContainerStyle={styles.authContent} showsVerticalScrollIndicator={false}>
         <View style={styles.authHero}>
           <View style={styles.authIcon}>
-            <BookOpen size={34} color={palette.green} />
+            <BookOpen size={30} color="#FFFFFF" />
           </View>
-          <Text style={styles.authTitle}>{isSignUp ? "加入 LinkNest" : "欢迎回来"}</Text>
-          <Text style={styles.authSubtitle}>
-            {message ?? "登录后可以借书、收藏、发布书籍并和附近书友沟通。"}
-          </Text>
+          <View style={styles.authHeroCopy}>
+            <Text style={styles.shelfEyebrow}>{isSignUp ? "Create account" : "Welcome back"}</Text>
+            <Text style={styles.authTitle}>{isSignUp ? "加入 LinkNest" : "欢迎回来"}</Text>
+            <Text style={styles.authSubtitle}>
+              {message ?? "登录后可以借书、收藏、发布书籍并和附近书友沟通。"}
+            </Text>
+          </View>
         </View>
 
         {!isSupabaseConfigured && (
@@ -1853,6 +1861,29 @@ function AuthScreen({
         )}
 
         <View style={styles.authForm}>
+          <View style={styles.authModeRow}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.authModeButton, !isSignUp && styles.authModeButtonActive]}
+              onPress={() => {
+                setError("");
+                setMode("signIn");
+              }}
+            >
+              <Text style={[styles.authModeText, !isSignUp && styles.authModeTextActive]}>登录</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.authModeButton, isSignUp && styles.authModeButtonActive]}
+              onPress={() => {
+                setError("");
+                setMode("signUp");
+              }}
+            >
+              <Text style={[styles.authModeText, isSignUp && styles.authModeTextActive]}>注册</Text>
+            </TouchableOpacity>
+          </View>
+
           {isSignUp && (
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>昵称</Text>
@@ -1937,28 +1968,29 @@ function AuthRequiredPanel({
 }) {
   return (
     <View style={styles.screen}>
-      <Header title={title} subtitle={subtitle} />
-      <View style={styles.authRequiredBody}>
+      <ScrollView contentContainerStyle={styles.authRequiredBody} showsVerticalScrollIndicator={false}>
         {loading ? (
           <LoadingState title="检查会话中" subtitle="正在确认你的登录状态。" compact />
         ) : (
-          <>
-            <View style={styles.successIllustration}>
+          <View style={styles.authRequiredCard}>
+            <View style={styles.authRequiredIconRing}>
               <View style={styles.authIconLarge}>
-                <UserRound size={48} color={palette.green} />
+                <UserRound size={42} color={palette.green} />
               </View>
             </View>
+            <Text style={styles.shelfEyebrow}>Member access</Text>
             <Text style={styles.authRequiredTitle}>需要登录</Text>
-          </>
+            <Text style={styles.authRequiredSubtitle}>{title}</Text>
+            <Text style={styles.successSubtitle}>{subtitle}</Text>
+          </View>
         )}
-        <Text style={styles.successSubtitle}>游客可以继续浏览附近图书，登录后才能进行借阅、收藏、聊天和发布。</Text>
         <TouchableOpacity activeOpacity={0.9} style={styles.primaryActionFull} onPress={onSignIn}>
           <Text style={styles.primaryActionText}>登录</Text>
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={0.85} style={styles.authSwitchButton} onPress={onSignUp}>
           <Text style={styles.authSwitchText}>创建账号</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -4243,18 +4275,38 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: palette.red
   },
-  meHeader: {
-    minHeight: 90,
+  meContent: {
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 104
+  },
+  meHero: {
+    minHeight: 126,
+    padding: 18,
+    borderRadius: 28,
+    backgroundColor: "#E7F5EF",
+    borderWidth: 1,
+    borderColor: "#D5EAE2",
     flexDirection: "row",
     alignItems: "center",
     gap: 14
   },
+  meHeroCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  mePanel: {
+    marginTop: 2,
+    paddingVertical: 4
+  },
   privacyPanel: {
     marginTop: 12,
-    paddingVertical: 16,
+    padding: 16,
+    borderRadius: 22,
     gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: palette.faint
+    borderWidth: 1,
+    borderColor: palette.faint,
+    backgroundColor: palette.panel
   },
   backendPanel: {
     marginTop: 12,
@@ -4390,44 +4442,55 @@ const styles = StyleSheet.create({
   },
   authContent: {
     paddingHorizontal: 20,
-    paddingTop: 28,
+    paddingTop: 20,
     paddingBottom: 42
   },
   authHero: {
+    minHeight: 132,
+    padding: 18,
+    borderRadius: 28,
+    backgroundColor: "#E7F5EF",
+    borderWidth: 1,
+    borderColor: "#D5EAE2",
+    flexDirection: "row",
     alignItems: "center",
-    paddingBottom: 22
+    gap: 14,
+    marginBottom: 16
   },
   authIcon: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.greenSoft
+    backgroundColor: palette.green
+  },
+  authHeroCopy: {
+    flex: 1,
+    minWidth: 0
   },
   authIconLarge: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 74,
+    height: 74,
+    borderRadius: 37,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.panel
   },
   authTitle: {
-    marginTop: 16,
-    fontSize: 28,
-    lineHeight: 34,
+    marginTop: 4,
+    fontSize: 25,
+    lineHeight: 31,
     fontWeight: "900",
-    color: palette.ink,
+    color: palette.greenDark,
     letterSpacing: 0
   },
   authSubtitle: {
-    marginTop: 8,
-    maxWidth: 320,
-    textAlign: "center",
-    fontSize: 15,
-    lineHeight: 23,
-    color: palette.muted
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 19,
+    color: palette.muted,
+    fontWeight: "800"
   },
   demoNotice: {
     minHeight: 48,
@@ -4450,7 +4513,37 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   authForm: {
+    padding: 16,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: palette.faint,
+    backgroundColor: palette.panel,
     gap: 14
+  },
+  authModeRow: {
+    height: 42,
+    padding: 4,
+    borderRadius: 21,
+    backgroundColor: "#EDF4F1",
+    flexDirection: "row",
+    gap: 4
+  },
+  authModeButton: {
+    flex: 1,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  authModeButtonActive: {
+    backgroundColor: palette.greenDark
+  },
+  authModeText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: palette.muted
+  },
+  authModeTextActive: {
+    color: "#FFFFFF"
   },
   inputGroup: {
     gap: 7
@@ -4488,17 +4581,44 @@ const styles = StyleSheet.create({
   },
   authRequiredBody: {
     flex: 1,
-    paddingHorizontal: 30,
-    paddingBottom: 82,
-    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 58,
+    paddingBottom: 104,
     justifyContent: "center"
   },
+  authRequiredCard: {
+    minHeight: 300,
+    padding: 22,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#D5EAE2",
+    backgroundColor: "#E7F5EF"
+  },
+  authRequiredIconRing: {
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.58)",
+    marginBottom: 14
+  },
   authRequiredTitle: {
-    marginTop: 18,
-    fontSize: 24,
-    lineHeight: 30,
+    marginTop: 4,
+    fontSize: 26,
+    lineHeight: 32,
     fontWeight: "900",
-    color: palette.ink
+    color: palette.greenDark
+  },
+  authRequiredSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "900",
+    color: palette.ink,
+    textAlign: "center"
   },
   formPreviewRow: {
     flexDirection: "row",
