@@ -716,7 +716,12 @@ function DiscoverScreen({
         </View>
       </View>
 
-      <View style={styles.filterRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.discoverFilterScroll}
+        contentContainerStyle={styles.discoverFilterContent}
+      >
         {categories.map((category) => (
           <Chip
             key={category}
@@ -725,7 +730,7 @@ function DiscoverScreen({
             onPress={() => onNearbyQueryChange({ category })}
           />
         ))}
-      </View>
+      </ScrollView>
 
       <View style={styles.radiusRowHidden}>
         {radiusOptions.map((radiusKm) => (
@@ -1222,15 +1227,35 @@ function ShelfScreen({
 
   return (
     <View style={styles.screen}>
-      <Header title="我的书架" subtitle="管理共享、借阅和收藏" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.shelfContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.shelfHero}>
+          <View style={styles.shelfHeroCopy}>
+            <Text style={styles.shelfEyebrow}>LinkNest Shelf</Text>
+            <Text style={styles.shelfHeroTitle}>我的书架</Text>
+            <Text style={styles.shelfHeroSubtitle}>共享 {myBooks.length} 本 · 借入 {borrowed.length} 本 · 收藏 {favoriteBooks.length} 本</Text>
+          </View>
+          <TouchableOpacity
+            accessibilityLabel="添加新书"
+            activeOpacity={0.86}
+            style={styles.shelfAddIconButton}
+            onPress={() => onRequireAuth(() => onEditBook())}
+          >
+            <Plus size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.statusGrid}>
           <StatusTile label="借阅中" value={String(activeBorrowed.length)} />
           <StatusTile label="待处理" value={String(pendingCount)} />
           <StatusTile label="待归还" value={String(returnCount)} />
         </View>
 
-        <View style={styles.shelfSectionTabs}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.shelfSectionScroller}
+          contentContainerStyle={styles.shelfSectionTabs}
+        >
           {shelfSections.map((section) => (
             <TouchableOpacity
               key={section.key}
@@ -1246,19 +1271,11 @@ function ShelfScreen({
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {activeShelfSection === "shared" && (
           <>
-            <SectionTitle title="我的共享" action="添加新书" />
-            <TouchableOpacity
-              activeOpacity={0.9}
-              style={styles.addBookButton}
-              onPress={() => onRequireAuth(() => onEditBook())}
-            >
-              <Plus size={18} color={palette.green} />
-              <Text style={styles.outlineButtonText}>添加新书</Text>
-            </TouchableOpacity>
+            <SectionTitle title="我的共享" />
             {myBooks.length ? (
               myBooks.map((book) => (
                 <ShelfSharedBook
@@ -2754,10 +2771,10 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   discoverHeader: {
-    minHeight: 150,
-    paddingHorizontal: 22,
-    paddingTop: 28,
-    paddingBottom: 14,
+    minHeight: 126,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 10,
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
@@ -2767,8 +2784,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   discoverHeaderTitle: {
-    fontSize: 28,
-    lineHeight: 36,
+    fontSize: 24,
+    lineHeight: 31,
     fontWeight: "900",
     color: palette.greenDark,
     letterSpacing: 0
@@ -2782,11 +2799,11 @@ const styles = StyleSheet.create({
   },
   locationPill: {
     alignSelf: "flex-start",
-    minHeight: 38,
-    marginTop: 8,
-    paddingLeft: 14,
-    paddingRight: 12,
-    borderRadius: 19,
+    minHeight: 34,
+    marginTop: 6,
+    paddingLeft: 12,
+    paddingRight: 10,
+    borderRadius: 17,
     flexDirection: "row",
     alignItems: "center",
     gap: 9,
@@ -2801,7 +2818,7 @@ const styles = StyleSheet.create({
     borderColor: "#69B39D"
   },
   locationPillText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     color: palette.green
   },
@@ -2817,16 +2834,16 @@ const styles = StyleSheet.create({
     color: palette.green
   },
   searchRow: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
     flexDirection: "row",
     gap: 10,
     alignItems: "center"
   },
   searchBox: {
     flex: 1,
-    height: 64,
-    paddingHorizontal: 22,
-    borderRadius: 32,
+    height: 54,
+    paddingHorizontal: 18,
+    borderRadius: 27,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint,
@@ -2836,7 +2853,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "800",
     color: palette.ink,
   },
@@ -2857,6 +2874,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 11,
     flexWrap: "wrap"
+  },
+  discoverFilterScroll: {
+    marginTop: 14,
+    maxHeight: 40
+  },
+  discoverFilterContent: {
+    paddingHorizontal: 20,
+    paddingRight: 30,
+    flexDirection: "row",
+    gap: 9
   },
   radiusRowHidden: {
     display: "none"
@@ -2961,9 +2988,9 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   chip: {
-    height: 44,
-    paddingHorizontal: 21,
-    borderRadius: 22,
+    height: 38,
+    paddingHorizontal: 17,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.panel,
@@ -2975,7 +3002,7 @@ const styles = StyleSheet.create({
     borderColor: palette.greenDark
   },
   chipText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900",
     color: "#6E837D"
   },
@@ -2983,7 +3010,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF"
   },
   scrollContent: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
     paddingBottom: 26
   },
   mapPanel: {
@@ -3080,16 +3107,16 @@ const styles = StyleSheet.create({
     color: palette.ink
   },
   bookListItem: {
-    minHeight: 150,
-    marginBottom: 16,
-    padding: 13,
-    borderRadius: 22,
+    minHeight: 126,
+    marginBottom: 12,
+    padding: 11,
+    borderRadius: 19,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint,
     flexDirection: "row",
     alignItems: "stretch",
-    gap: 13
+    gap: 11
   },
   bookListItemCompact: {
     minHeight: 96,
@@ -3122,8 +3149,8 @@ const styles = StyleSheet.create({
     height: 78
   },
   coverMedium: {
-    width: 92,
-    height: 130,
+    width: 78,
+    height: 110,
     borderRadius: 7
   },
   coverLarge: {
@@ -3177,38 +3204,38 @@ const styles = StyleSheet.create({
     minWidth: 0
   },
   bookCardHeader: {
-    minHeight: 44,
+    minHeight: 38,
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10
   },
   bookItemTitle: {
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 17,
+    lineHeight: 23,
     fontWeight: "900",
     color: palette.ink
   },
   bookAuthorText: {
     marginTop: 2,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "800",
     color: palette.muted
   },
   bookMetaRow: {
-    marginTop: 8,
+    marginTop: 6,
     flexDirection: "row",
     alignItems: "center",
     gap: 7
   },
   bookMetaChip: {
-    paddingHorizontal: 11,
-    height: 27,
-    lineHeight: 27,
+    paddingHorizontal: 10,
+    height: 24,
+    lineHeight: 24,
     borderRadius: 14,
     overflow: "hidden",
     backgroundColor: "#EFF5F2",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900",
     color: "#7D948E"
   },
@@ -3218,12 +3245,12 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   bookMetaText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "900",
     color: "#6F8981"
   },
   bookCardFooter: {
-    marginTop: 12,
+    marginTop: 9,
     flexDirection: "row",
     alignItems: "center",
     gap: 9
@@ -3235,11 +3262,11 @@ const styles = StyleSheet.create({
     gap: 6
   },
   pinEmoji: {
-    fontSize: 19,
-    lineHeight: 22
+    fontSize: 16,
+    lineHeight: 19
   },
   distanceText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "900",
     color: palette.green
   },
@@ -3698,15 +3725,71 @@ const styles = StyleSheet.create({
   gridBook: {
     width: 92
   },
+  shelfContent: {
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 104
+  },
+  shelfHero: {
+    minHeight: 118,
+    padding: 18,
+    borderRadius: 28,
+    backgroundColor: "#E7F5EF",
+    borderWidth: 1,
+    borderColor: "#D5EAE2",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14
+  },
+  shelfHeroCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  shelfEyebrow: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "900",
+    color: palette.green
+  },
+  shelfHeroTitle: {
+    marginTop: 4,
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: "900",
+    color: palette.greenDark,
+    letterSpacing: 0
+  },
+  shelfHeroSubtitle: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "800",
+    color: palette.muted
+  },
+  shelfAddIconButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.green,
+    shadowColor: "#6EA898",
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3
+  },
   statusGrid: {
     flexDirection: "row",
     gap: 10,
+    marginTop: 14,
     marginBottom: 12
   },
   statusTile: {
     flex: 1,
-    minHeight: 78,
-    borderRadius: 18,
+    minHeight: 68,
+    borderRadius: 20,
     backgroundColor: palette.panel,
     borderWidth: 1,
     borderColor: palette.faint,
@@ -3714,7 +3797,7 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   statusValue: {
-    fontSize: 21,
+    fontSize: 19,
     fontWeight: "900",
     color: palette.green
   },
@@ -3731,16 +3814,19 @@ const styles = StyleSheet.create({
     gap: 8
   },
   shelfSectionTabs: {
-    marginTop: 4,
-    marginBottom: 6,
+    paddingRight: 18,
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
+    gap: 9
+  },
+  shelfSectionScroller: {
+    marginTop: 2,
+    marginBottom: 8,
+    maxHeight: 42
   },
   shelfSectionTab: {
-    minHeight: 40,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    minHeight: 38,
+    paddingHorizontal: 13,
+    borderRadius: 19,
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
@@ -3761,11 +3847,11 @@ const styles = StyleSheet.create({
     color: "#FFFFFF"
   },
   shelfSectionCount: {
-    minWidth: 22,
-    height: 22,
+    minWidth: 21,
+    height: 21,
     borderRadius: 11,
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 21,
     overflow: "hidden",
     fontSize: 12,
     fontWeight: "900",
@@ -3777,12 +3863,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF"
   },
   shelfBookWrap: {
-    marginBottom: 12
+    marginBottom: 10
   },
   shelfBookActions: {
-    marginTop: -4,
-    marginBottom: 8,
-    paddingHorizontal: 8,
+    marginTop: -2,
+    marginBottom: 6,
+    paddingHorizontal: 6,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between"
