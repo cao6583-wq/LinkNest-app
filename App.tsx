@@ -49,9 +49,12 @@ import {
 } from "./src/data/bookPublishing";
 import {
   bookStatusForBorrow,
+  chatMessagesForRequest,
   createBorrowRequest,
+  sendBorrowChatMessage,
   statusLabel,
   statusMessage,
+  systemMessageForStatus,
   transitionBorrowRequest
 } from "./src/data/borrowWorkflow";
 import {
@@ -89,6 +92,7 @@ type Screen =
   | { name: "book"; bookId: string }
   | { name: "borrow"; bookId: string }
   | { name: "borrowSent"; bookId: string }
+  | { name: "borrowChat"; requestId: string }
   | { name: "lender"; userId: string }
   | { name: "friendSent"; userId: string }
   | { name: "bookForm"; bookId?: string }
@@ -247,6 +251,26 @@ export default function App() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (!authUser || authUser.isDemo || activeTab !== "messages") return undefined;
+
+    const syncMessages = () => {
+      fetchUserData(authUser)
+        .then((data) => {
+          setFavorites(data.favorites);
+          setFriendships(data.friendships);
+          setBorrowRequests(data.borrowRequests);
+          setNotifications(data.notifications);
+        })
+        .catch((error) => {
+          setCatalogError(error instanceof Error ? error.message : "同步消息失败。");
+        });
+    };
+
+    const timer = setInterval(syncMessages, 5000);
+    return () => clearInterval(timer);
+  }, [activeTab, authUser?.id, authUser?.isDemo]);
+
   const visibleBooks = useMemo(() => {
     const discoverableBooks = catalogBooks.filter((book) => book.status === "available");
     const cleanQuery = query.trim().toLowerCase();
@@ -263,6 +287,12 @@ export default function App() {
   const selectedUser = screen.name === "lender" || screen.name === "friendSent"
     ? catalogUsers.find((user) => user.id === screen.userId)
     : undefined;
+  const selectedBorrowRequest = screen.name === "borrowChat"
+    ? borrowRequests.find((request) => request.id === screen.requestId)
+    : undefined;
+  const selectedBorrowBook = selectedBorrowRequest
+    ? catalogBooks.find((book) => book.id === selectedBorrowRequest.bookId)
+    : undefined;
   const editingBook = screen.name === "bookForm" && screen.bookId
     ? catalogBooks.find((book) => book.id === screen.bookId)
     : undefined;
@@ -275,6 +305,7 @@ export default function App() {
 
   const openBook = (bookId: string) => setScreen({ name: "book", bookId });
   const openLender = (userId: string) => setScreen({ name: "lender", userId });
+  const openBorrowChat = (requestId: string) => setScreen({ name: "borrowChat", requestId });
 
   const updateNearbyQuery = (patch: Partial<NearbyQuery>) => {
     setNearbyQuery((current) => ({ ...current, ...patch }));
@@ -463,6 +494,12 @@ export default function App() {
     }
   };
 
+  const handleSendBorrowMessage = async (request: BorrowRequest, body: string) => {
+    if (!authUser) throw new Error("请先登录后发送消息。");
+    const updated = await sendBorrowChatMessage({ request, sender: authUser, body });
+    setBorrowRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
+  };
+
   const handleSubmitReport = async (draft: ReportDraft) => {
     if (!authUser) {
       throw new Error("请先登录后提交举报。");
@@ -530,6 +567,7 @@ export default function App() {
                     notifications={notifications}
                     borrowRequests={borrowRequests}
                     onOpenBook={openBook}
+                    onOpenBorrowChat={openBorrowChat}
                     onBorrowTransition={handleBorrowTransition}
                   />
                 ) : (
@@ -615,6 +653,28 @@ export default function App() {
             title="申请已发送"
             subtitle="等待对方回复，你可以在消息里查看进度。"
             actionLabel="去消息查看"
+            onAction={() => goTabs("messages")}
+          />
+        )}
+
+        {screen.name === "borrowChat" && authUser && selectedBorrowRequest && selectedBorrowBook && (
+          <BorrowChatScreen
+            request={selectedBorrowRequest}
+            book={selectedBorrowBook}
+            users={catalogUsers}
+            currentUser={authUser}
+            onBack={() => goTabs("messages")}
+            onOpenBook={openBook}
+            onSendMessage={handleSendBorrowMessage}
+            onBorrowTransition={handleBorrowTransition}
+          />
+        )}
+
+        {screen.name === "borrowChat" && (!selectedBorrowRequest || !selectedBorrowBook) && !catalogLoading && (
+          <NotFoundScreen
+            title="对话不存在"
+            subtitle="这条借阅申请可能已经被清理，或数据还没有同步完成。"
+            actionLabel="回到消息"
             onAction={() => goTabs("messages")}
           />
         )}
@@ -1434,6 +1494,7 @@ function MessagesScreen({
   notifications,
   borrowRequests,
   onOpenBook,
+  onOpenBorrowChat,
   onBorrowTransition
 }: {
   books: Book[];
@@ -1442,6 +1503,7 @@ function MessagesScreen({
   notifications: MessageNotification[];
   borrowRequests: BorrowRequest[];
   onOpenBook: (bookId: string) => void;
+  onOpenBorrowChat: (requestId: string) => void;
   onBorrowTransition: (request: BorrowRequest, nextStatus: BorrowStatus) => Promise<void>;
 }) {
   const visibleNotifications = notifications.filter((notification, index, list) => (
@@ -1496,7 +1558,7 @@ function MessagesScreen({
                   currentUser={currentUser}
                   users={users}
                   onOpenBook={onOpenBook}
-                  onTransition={onBorrowTransition}
+                  onOpenThread={onOpenBorrowChat}
                 />
               );
             }
@@ -1542,7 +1604,7 @@ function BorrowMessageCard({
   currentUser,
   users,
   onOpenBook,
-  onTransition
+  onOpenThread
 }: {
   notification: MessageNotification;
   book: Book;
@@ -1550,25 +1612,18 @@ function BorrowMessageCard({
   currentUser: AuthUser;
   users: User[];
   onOpenBook: (bookId: string) => void;
-  onTransition: (request: BorrowRequest, nextStatus: BorrowStatus) => Promise<void>;
+  onOpenThread: (requestId: string) => void;
 }) {
   const role: "borrower" | "lender" = request.lenderId === currentUser.id ? "lender" : "borrower";
   const participantId = role === "lender" ? request.borrowerId : request.lenderId;
   const participant = getMessageUser(participantId, users, notification);
-  const [busyStatus, setBusyStatus] = useState<BorrowStatus | null>(null);
-  const actions = borrowActionsFor(role, request.status);
-
-  const transition = async (nextStatus: BorrowStatus) => {
-    setBusyStatus(nextStatus);
-    try {
-      await onTransition(request, nextStatus);
-    } finally {
-      setBusyStatus(null);
-    }
-  };
 
   return (
-    <View style={[styles.borrowMessageCard, notification.unread && styles.threadRowUnread]}>
+    <TouchableOpacity
+      activeOpacity={0.9}
+      style={[styles.borrowMessageCard, notification.unread && styles.threadRowUnread]}
+      onPress={() => onOpenThread(request.id)}
+    >
       <View style={styles.borrowMessageHeader}>
         <Avatar user={participant} size={44} />
         <View style={styles.flex}>
@@ -1598,23 +1653,147 @@ function BorrowMessageCard({
         </Text>
       </View>
 
-      {actions.length > 0 && (
-        <View style={styles.borrowActionRow}>
-          {actions.map((action) => (
-            <TouchableOpacity
-              key={action.status}
-              activeOpacity={0.85}
-              disabled={busyStatus !== null}
-              style={[styles.borrowActionButton, action.kind === "danger" && styles.borrowDangerButton]}
-              onPress={() => transition(action.status)}
-            >
-              <Text style={[styles.borrowActionText, action.kind === "danger" && styles.borrowDangerText]}>
-                {busyStatus === action.status ? "处理中" : action.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+      <View style={styles.openThreadHint}>
+        <MessageCircle size={15} color={palette.green} />
+        <Text style={styles.openThreadHintText}>打开对话</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function BorrowChatScreen({
+  request,
+  book,
+  users,
+  currentUser,
+  onBack,
+  onOpenBook,
+  onSendMessage,
+  onBorrowTransition
+}: {
+  request: BorrowRequest;
+  book: Book;
+  users: User[];
+  currentUser: AuthUser;
+  onBack: () => void;
+  onOpenBook: (bookId: string) => void;
+  onSendMessage: (request: BorrowRequest, body: string) => Promise<void>;
+  onBorrowTransition: (request: BorrowRequest, nextStatus: BorrowStatus) => Promise<void>;
+}) {
+  const role: "borrower" | "lender" = request.lenderId === currentUser.id ? "lender" : "borrower";
+  const participantId = role === "lender" ? request.borrowerId : request.lenderId;
+  const participant = getUser(participantId, users);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [busyStatus, setBusyStatus] = useState<BorrowStatus | null>(null);
+  const [error, setError] = useState("");
+  const actions = borrowActionsFor(role, request.status);
+  const messages = chatMessagesForRequest(request);
+  const statusMessage = request.status === "pending" ? "" : systemMessageForStatus(request.status);
+
+  const sendMessage = async () => {
+    const cleanDraft = draft.trim();
+    if (!cleanDraft) return;
+    setSending(true);
+    setError("");
+    try {
+      await onSendMessage(request, cleanDraft);
+      setDraft("");
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "消息发送失败。");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const transition = async (nextStatus: BorrowStatus) => {
+    setBusyStatus(nextStatus);
+    setError("");
+    try {
+      await onBorrowTransition(request, nextStatus);
+    } catch (transitionError) {
+      setError(transitionError instanceof Error ? transitionError.message : "状态更新失败。");
+    } finally {
+      setBusyStatus(null);
+    }
+  };
+
+  return (
+    <View style={styles.screen}>
+      <TopBar title={participant.displayName} onBack={onBack} />
+      <ScrollView contentContainerStyle={styles.chatContent} showsVerticalScrollIndicator={false}>
+        <TouchableOpacity activeOpacity={0.88} style={styles.chatBookCard} onPress={() => onOpenBook(book.id)}>
+          <BookCover book={book} size="tiny" />
+          <View style={styles.flex}>
+            <Text numberOfLines={1} style={styles.cardTitle}>{book.title}</Text>
+            <Text numberOfLines={1} style={styles.mutedText}>{book.author} · {statusLabel(request.status)}</Text>
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.chatTimeline}>
+          {messages.map((message) => {
+            const isMine = message.senderId === currentUser.id;
+            const sender = isMine ? authUserToUser(currentUser) : participant;
+            return (
+              <View key={message.id} style={[styles.chatMessageRow, isMine && styles.chatMessageRowMine]}>
+                {!isMine && <Avatar user={sender} size={30} />}
+                <View style={isMine ? styles.chatBubbleMine : styles.chatBubbleOther}>
+                  <Text style={isMine ? styles.chatBubbleMineText : styles.bodyText}>{message.body}</Text>
+                  <Text style={isMine ? styles.chatBubbleMineTime : styles.chatBubbleTime}>{chatTimeLabel(message.createdAt)}</Text>
+                </View>
+              </View>
+            );
+          })}
+
+          {statusMessage ? (
+            <View style={styles.chatSystemLine}>
+              <Text style={styles.chatSystemText}>{statusMessage}</Text>
+            </View>
+          ) : null}
         </View>
-      )}
+
+        {actions.length > 0 && (
+          <View style={styles.chatActionPanel}>
+            <Text style={styles.sectionHeading}>{role === "lender" ? "处理借阅申请" : "更新交接状态"}</Text>
+            <View style={styles.borrowActionRow}>
+              {actions.map((action) => (
+                <TouchableOpacity
+                  key={action.status}
+                  activeOpacity={0.85}
+                  disabled={busyStatus !== null}
+                  style={[styles.borrowActionButton, action.kind === "danger" && styles.borrowDangerButton]}
+                  onPress={() => transition(action.status)}
+                >
+                  <Text style={[styles.borrowActionText, action.kind === "danger" && styles.borrowDangerText]}>
+                    {busyStatus === action.status ? "处理中" : action.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      </ScrollView>
+
+      <View style={styles.chatComposer}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="输入消息，约时间或地点"
+          placeholderTextColor="#9EA69D"
+          style={styles.chatInput}
+          multiline
+        />
+        <TouchableOpacity
+          activeOpacity={0.88}
+          disabled={sending || !draft.trim()}
+          style={[styles.chatSendButton, (!draft.trim() || sending) && styles.disabledAction]}
+          onPress={sendMessage}
+        >
+          <Send size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -2834,6 +3013,26 @@ function getMessageUser(userId: string, directory: User[], notification: Message
     bio: "LinkNest 书友",
     neighborhood: "附近"
   };
+}
+
+function authUserToUser(user: AuthUser): User {
+  return {
+    id: user.id,
+    displayName: user.displayName,
+    avatar: user.displayName.slice(0, 1).toUpperCase(),
+    distanceKm: 0,
+    sharedCount: 0,
+    rating: 4.8,
+    bio: "LinkNest 书友",
+    neighborhood: "我"
+  };
+}
+
+function chatTimeLabel(value: string): string {
+  return new Date(value).toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function getUser(userId: string, directory: User[] = mockUsers): User {
@@ -4309,6 +4508,145 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10
+  },
+  openThreadHint: {
+    alignSelf: "flex-start",
+    marginTop: 10,
+    height: 30,
+    paddingHorizontal: 11,
+    borderRadius: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: palette.greenSoft
+  },
+  openThreadHintText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: palette.green
+  },
+  chatContent: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 112
+  },
+  chatBookCard: {
+    minHeight: 66,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: "#F7FAF7",
+    borderWidth: 1,
+    borderColor: palette.faint,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11
+  },
+  chatTimeline: {
+    paddingTop: 14,
+    gap: 10
+  },
+  chatMessageRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8
+  },
+  chatMessageRowMine: {
+    justifyContent: "flex-end"
+  },
+  chatBubbleOther: {
+    maxWidth: "78%",
+    padding: 12,
+    borderRadius: 17,
+    borderBottomLeftRadius: 6,
+    backgroundColor: palette.panel,
+    borderWidth: 1,
+    borderColor: palette.faint
+  },
+  chatBubbleMine: {
+    maxWidth: "78%",
+    padding: 12,
+    borderRadius: 17,
+    borderBottomRightRadius: 6,
+    backgroundColor: palette.green
+  },
+  chatBubbleMineText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
+    color: "#FFFFFF"
+  },
+  chatBubbleTime: {
+    marginTop: 5,
+    fontSize: 11,
+    fontWeight: "800",
+    color: palette.muted
+  },
+  chatBubbleMineTime: {
+    marginTop: 5,
+    fontSize: 11,
+    fontWeight: "800",
+    color: "rgba(255,255,255,0.74)"
+  },
+  chatSystemLine: {
+    alignSelf: "center",
+    maxWidth: "86%",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: "#EEF5F2"
+  },
+  chatSystemText: {
+    textAlign: "center",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
+    color: palette.muted
+  },
+  chatActionPanel: {
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: palette.panel,
+    borderWidth: 1,
+    borderColor: palette.faint
+  },
+  chatComposer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    minHeight: 82,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 18,
+    borderTopWidth: 1,
+    borderTopColor: palette.faint,
+    backgroundColor: palette.background,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10
+  },
+  chatInput: {
+    flex: 1,
+    minHeight: 46,
+    maxHeight: 92,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: palette.faint,
+    backgroundColor: palette.panel,
+    fontSize: 14,
+    lineHeight: 19,
+    color: palette.ink
+  },
+  chatSendButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.green
   },
   unreadDot: {
     width: 9,

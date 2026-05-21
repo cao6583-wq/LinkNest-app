@@ -47,6 +47,15 @@ export type BorrowRequest = {
   status: BorrowStatus;
   message: string;
   dateLabel: string;
+  chatMessages?: BorrowChatMessage[];
+};
+
+export type BorrowChatMessage = {
+  id: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+  kind?: "text" | "system";
 };
 
 export type Friendship = {

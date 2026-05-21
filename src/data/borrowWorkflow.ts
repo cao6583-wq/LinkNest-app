@@ -1,6 +1,6 @@
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import type { AuthUser } from "../lib/auth";
-import type { Book, BorrowRequest, BorrowStatus } from "../types";
+import type { Book, BorrowChatMessage, BorrowRequest, BorrowStatus } from "../types";
 import type { Database } from "../types/database";
 
 type BorrowRequestRow = Database["public"]["Tables"]["borrow_requests"]["Row"];
@@ -16,25 +16,36 @@ export type BorrowTransition = {
   nextStatus: BorrowStatus;
 };
 
+export type BorrowChatDraft = {
+  request: BorrowRequest;
+  sender: AuthUser;
+  body: string;
+};
+
+const chatPayloadPrefix = "LINKNEST_CHAT_V1:";
+
 export async function createBorrowRequest({ book, borrower, message }: BorrowDraft): Promise<BorrowRequest> {
   if (!isSupabaseConfigured || borrower.isDemo) {
+    const body = message.trim() || "想借这本书。";
     return {
       id: `local-borrow-${Date.now()}`,
       bookId: book.id,
       borrowerId: borrower.id,
       lenderId: book.ownerId,
       status: "pending",
-      message: message.trim() || "想借这本书。",
-      dateLabel: "今天"
+      message: body,
+      dateLabel: "今天",
+      chatMessages: [createChatMessage(borrower.id, body)]
     };
   }
 
+  const body = message.trim() || "想借这本书。";
   const { data, error } = await (supabase.from("borrow_requests") as any)
     .insert({
       book_id: book.id,
       borrower_id: borrower.id,
       lender_id: book.ownerId,
-      message: message.trim() || null,
+      message: encodeBorrowChat([createChatMessage(borrower.id, body)]),
       status: "pending"
     })
     .select("*")
@@ -53,7 +64,8 @@ export async function transitionBorrowRequest({
       ...request,
       status: nextStatus,
       message: statusMessage(nextStatus),
-      dateLabel: request.dateLabel || "今天"
+      dateLabel: request.dateLabel || "今天",
+      chatMessages: request.chatMessages
     };
   }
 
@@ -63,6 +75,37 @@ export async function transitionBorrowRequest({
       status: nextStatus,
       ...timestampPatch
     })
+    .eq("id", request.id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return mapBorrowRowToRequest(data);
+}
+
+export async function sendBorrowChatMessage({
+  request,
+  sender,
+  body
+}: BorrowChatDraft): Promise<BorrowRequest> {
+  const cleanBody = body.trim();
+  if (!cleanBody) return request;
+
+  const nextMessages = [
+    ...chatMessagesForRequest(request),
+    createChatMessage(sender.id, cleanBody)
+  ];
+
+  if (!isSupabaseConfigured || sender.isDemo || request.id.startsWith("local-") || request.id.startsWith("borrow-")) {
+    return {
+      ...request,
+      message: firstUserMessage(nextMessages) || cleanBody,
+      chatMessages: nextMessages
+    };
+  }
+
+  const { data, error } = await (supabase.from("borrow_requests") as any)
+    .update({ message: encodeBorrowChat(nextMessages) })
     .eq("id", request.id)
     .select("*")
     .single();
@@ -116,18 +159,46 @@ export function statusLabel(status: BorrowStatus): string {
 }
 
 export function mapBorrowRowToRequest(row: BorrowRequestRow): BorrowRequest {
+  const chatMessages = parseBorrowChat(row.message, row.borrower_id, row.requested_at);
   return {
     id: row.id,
     bookId: row.book_id,
     borrowerId: row.borrower_id,
     lenderId: row.lender_id,
     status: row.status,
-    message: row.message ?? statusMessage(row.status),
+    message: firstUserMessage(chatMessages) || row.message || statusMessage(row.status),
     dateLabel: new Date(row.requested_at).toLocaleDateString("zh-CN", {
       month: "2-digit",
       day: "2-digit"
-    })
+    }),
+    chatMessages
   };
+}
+
+export function chatMessagesForRequest(request: BorrowRequest): BorrowChatMessage[] {
+  if (request.chatMessages?.length) return request.chatMessages;
+  return request.message
+    ? [createChatMessage(request.borrowerId, request.message)]
+    : [];
+}
+
+export function systemMessageForStatus(status: BorrowStatus): string {
+  switch (status) {
+    case "accepted":
+      return "出借者已同意借阅，可以沟通交接时间和地点。";
+    case "borrowed":
+      return "借阅者已确认拿到书。";
+    case "return_requested":
+      return "借阅者已申请归还，请确认书已归还。";
+    case "returned":
+      return "出借者已确认归还，这次借阅完成。";
+    case "rejected":
+      return "出借者已拒绝这次借阅申请。";
+    case "canceled":
+      return "借阅者已取消这次借阅申请。";
+    case "pending":
+      return "借阅申请已发送，等待出借者处理。";
+  }
 }
 
 function timestampForStatus(status: BorrowStatus) {
@@ -136,4 +207,57 @@ function timestampForStatus(status: BorrowStatus) {
   if (status === "borrowed") return { borrowed_at: now };
   if (status === "returned") return { returned_at: now };
   return {};
+}
+
+function createChatMessage(senderId: string, body: string, kind: BorrowChatMessage["kind"] = "text"): BorrowChatMessage {
+  return {
+    id: `${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    senderId,
+    body,
+    createdAt: new Date().toISOString(),
+    kind
+  };
+}
+
+function parseBorrowChat(
+  rawMessage: string | null,
+  borrowerId: string,
+  requestedAt: string
+): BorrowChatMessage[] {
+  if (!rawMessage) return [];
+  if (!rawMessage.startsWith(chatPayloadPrefix)) {
+    return [{
+      id: `initial-${requestedAt}`,
+      senderId: borrowerId,
+      body: rawMessage,
+      createdAt: requestedAt,
+      kind: "text"
+    }];
+  }
+
+  try {
+    const payload = JSON.parse(rawMessage.slice(chatPayloadPrefix.length)) as { messages?: BorrowChatMessage[] };
+    return Array.isArray(payload.messages)
+      ? payload.messages.filter(isBorrowChatMessage)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function encodeBorrowChat(messages: BorrowChatMessage[]): string {
+  return `${chatPayloadPrefix}${JSON.stringify({ messages })}`;
+}
+
+function firstUserMessage(messages: BorrowChatMessage[]): string {
+  return messages.find((message) => message.kind !== "system")?.body ?? "";
+}
+
+function isBorrowChatMessage(value: unknown): value is BorrowChatMessage {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Partial<BorrowChatMessage>;
+  return typeof message.id === "string"
+    && typeof message.senderId === "string"
+    && typeof message.body === "string"
+    && typeof message.createdAt === "string";
 }
