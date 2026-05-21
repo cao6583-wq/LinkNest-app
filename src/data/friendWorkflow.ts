@@ -114,7 +114,7 @@ export function relationLabel(relation: FriendRelation): string {
   }
 }
 
-function mapFriendshipRow(row: FriendshipRow): Friendship {
+export function mapFriendshipRow(row: FriendshipRow): Friendship {
   return {
     id: row.id,
     requesterId: row.requester_id,

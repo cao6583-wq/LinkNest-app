@@ -26,6 +26,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 
 ```text
 supabase/migrations/20260518000000_initial_schema.sql
+supabase/migrations/20260519000000_real_data_sync.sql
 ```
 
 这个脚本会创建：
@@ -43,6 +44,8 @@ supabase/migrations/20260518000000_initial_schema.sql
 - avatars storage bucket
 - RLS policies
 - nearby_books 查询函数
+- 借阅双方读取借阅相关图书的 RLS policy
+- 借阅申请状态同步图书 `status` 的 trigger
 
 数据库结构说明见：
 
@@ -71,3 +74,14 @@ npm run web
 ```
 
 后续第三步会把 mock 数据替换成 Supabase 查询。当前已完成 Supabase client 和数据库 schema 接线。
+
+配置 Supabase 后，前端会自动切换到真实数据：
+
+- 游客发现页读取 `nearby_books` 返回的 `available` 图书。
+- 登录用户额外读取自己的图书、借阅相关图书、收藏、借阅申请和好友关系。
+- 发布图书写入 `books`。
+- 收藏写入 / 删除 `favorites`。
+- 借阅申请写入 `borrow_requests`，数据库 trigger 会同步 `books.status`。
+- 举报写入 `reports`。
+
+如果 Supabase 查询失败，发现页会显示提示并回退到本地示例数据，方便继续本地开发。

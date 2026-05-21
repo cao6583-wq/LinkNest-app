@@ -29,6 +29,7 @@
 - 创建 Supabase 项目。
 - 配置 `.env.local`。
 - 执行 `supabase/migrations/20260518000000_initial_schema.sql`。
+- 执行 `supabase/migrations/20260519000000_real_data_sync.sql`。
 - 创建测试用户。
 - 按需执行 `supabase/seed.example.sql`。
 - 在真实项目里测试 RLS。
@@ -153,6 +154,8 @@ Beta 前至少确认：
 - 未配置 Supabase 或使用演示用户时，举报写入本地演示记录。
 - 配置 Supabase 且真实登录后，举报写入 `reports` 表。
 - “我的”页会显示 Supabase 配置、当前会话、图书数据源和举报写入目标。
+- 配置 Supabase 且真实登录后，收藏、借阅申请、好友关系会从真实表读取。
+- 借阅状态变化会通过数据库 trigger 同步到 `books.status`。
 
 ## Beta 测试任务
 
@@ -204,5 +207,6 @@ curl -I http://127.0.0.1:5177/
 - 手机浏览器布局
 - Expo Go 原生体验
 - 真实 Supabase 登录、举报写入和 RLS
+- 真实 Supabase 收藏、借阅申请、好友关系读取
 - GitHub Actions 首次远程运行结果
 - Web Beta 部署流水线

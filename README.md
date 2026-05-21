@@ -63,6 +63,7 @@ Run the SQL in:
 
 ```text
 supabase/migrations/20260518000000_initial_schema.sql
+supabase/migrations/20260519000000_real_data_sync.sql
 ```
 
 See:

@@ -20,12 +20,17 @@ const coverPalette = [
   ["#223C3A", "#D9B86C"]
 ];
 
-export function mapProfileRowToUser(profile: ProfileRow, rating = 4.8, sharedCount = 0): User {
+export function mapProfileRowToUser(
+  profile: ProfileRow,
+  rating = 4.8,
+  sharedCount = 0,
+  distanceKm = 0
+): User {
   return {
     id: profile.id,
     displayName: profile.display_name,
     avatar: profile.display_name.slice(0, 1).toUpperCase(),
-    distanceKm: 0,
+    distanceKm,
     sharedCount,
     rating,
     bio: profile.bio ?? "",

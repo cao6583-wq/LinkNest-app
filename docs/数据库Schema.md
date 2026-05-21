@@ -3,6 +3,7 @@
 第三步的数据库层由两个文件组成：
 
 - `supabase/migrations/20260518000000_initial_schema.sql`：正式建表脚本。
+- `supabase/migrations/20260519000000_real_data_sync.sql`：真实数据联调用的补充 RLS 和借阅状态同步脚本。
 - `supabase/seed.example.sql`：开发示例数据，需要替换成真实 Auth 用户 ID 后执行。
 
 ## 核心表
@@ -112,7 +113,7 @@ erDiagram
 
 ## RLS 原则
 
-- 图书：游客可读 `available` 图书，书主可读自己的所有图书。
+- 图书：游客可读 `available` 图书，书主可读自己的所有图书，借阅双方可读对应借阅申请关联的图书。
 - 资料：公开可读，用户只能更新自己的资料。
 - 借阅：只有借阅双方可读写。
 - 好友：只有关系双方可读写。
@@ -136,7 +137,18 @@ from public.nearby_books(43.6532, -79.3832, 3);
 
 1. 在 Supabase 控制台创建项目。
 2. 执行 `supabase/migrations/20260518000000_initial_schema.sql`。
-3. 在 Auth 里创建测试用户。
-4. 用测试用户的 `auth.users.id` 替换 `supabase/seed.example.sql` 里的占位 UUID。
-5. 执行 `supabase/seed.example.sql`。
-6. 调用 `nearby_books` 验证附近书籍查询。
+3. 执行 `supabase/migrations/20260519000000_real_data_sync.sql`。
+4. 在 Auth 里创建测试用户。
+5. 用测试用户的 `auth.users.id` 替换 `supabase/seed.example.sql` 里的占位 UUID。
+6. 执行 `supabase/seed.example.sql`。
+7. 调用 `nearby_books` 验证附近书籍查询。
+
+## 借阅状态同步
+
+`20260519000000_real_data_sync.sql` 会创建 `borrow_requests_sync_book_status` trigger：
+
+- `pending` / `accepted` -> 图书标记为 `pending`
+- `borrowed` / `return_requested` -> 图书标记为 `borrowed`
+- `returned` / `rejected` / `canceled` -> 如果没有其他活跃申请，图书恢复为 `available`
+
+`hidden` 图书不会被 trigger 自动重新上架。

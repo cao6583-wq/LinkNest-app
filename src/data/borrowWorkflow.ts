@@ -115,7 +115,7 @@ export function statusLabel(status: BorrowStatus): string {
   }
 }
 
-function mapBorrowRowToRequest(row: BorrowRequestRow): BorrowRequest {
+export function mapBorrowRowToRequest(row: BorrowRequestRow): BorrowRequest {
   return {
     id: row.id,
     bookId: row.book_id,

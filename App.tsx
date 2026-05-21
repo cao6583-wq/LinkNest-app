@@ -69,6 +69,7 @@ import {
   markNotificationsRead
 } from "./src/data/notifications";
 import { submitReport, type ReportDraft } from "./src/data/reports";
+import { fetchUserData, setFavoriteBook } from "./src/data/userData";
 import { books as mockBooks, borrowRequests as mockBorrowRequests, threads, users as mockUsers } from "./src/data/mockData";
 import {
   getCurrentAuthUser,
@@ -186,7 +187,7 @@ export default function App() {
     let mounted = true;
 
     setCatalogLoading(true);
-    fetchBookCatalog(nearbyQuery)
+    fetchBookCatalog(nearbyQuery, authUser)
       .then((catalog) => {
         if (!mounted) return;
         setCatalogBooks(catalog.books);
@@ -201,7 +202,40 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [nearbyQuery, catalogRefreshKey]);
+  }, [nearbyQuery, catalogRefreshKey, authUser?.id, authUser?.isDemo]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!authUser) {
+      setFavorites(["hundred-years"]);
+      setFriendships(demoFriendships);
+      setBorrowRequests(mockBorrowRequests);
+      setNotifications(initialNotificationsFromBorrowRequests(mockBorrowRequests, mockBooks, mockUsers, threads));
+      return () => {
+        mounted = false;
+      };
+    }
+
+    fetchUserData(authUser)
+      .then((data) => {
+        if (!mounted) return;
+        setFavorites(data.favorites);
+        setFriendships(data.friendships);
+        setBorrowRequests(data.borrowRequests);
+        setNotifications(data.source === "supabase"
+          ? data.notifications
+          : initialNotificationsFromBorrowRequests(data.borrowRequests, mockBooks, mockUsers, threads));
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        setCatalogError(error instanceof Error ? error.message : "读取用户数据失败。");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [authUser?.id, authUser?.isDemo]);
 
   const reloadCatalog = () => {
     setCatalogRefreshKey((current) => current + 1);
@@ -214,9 +248,10 @@ export default function App() {
   }, [activeTab]);
 
   const visibleBooks = useMemo(() => {
+    const discoverableBooks = catalogBooks.filter((book) => book.status === "available");
     const cleanQuery = query.trim().toLowerCase();
-    if (!cleanQuery) return catalogBooks;
-    return catalogBooks.filter((book) => {
+    if (!cleanQuery) return discoverableBooks;
+    return discoverableBooks.filter((book) => {
       const haystack = `${book.title} ${book.author} ${book.category}`.toLowerCase();
       return haystack.includes(cleanQuery);
     });
@@ -283,10 +318,20 @@ export default function App() {
 
   const toggleFavorite = (bookId: string) => {
     requireAuth(
-      () => {
-        setFavorites((current) => current.includes(bookId)
-          ? current.filter((id) => id !== bookId)
-          : [...current, bookId]);
+      async () => {
+        if (!authUser) return;
+        const nextFavorite = !favorites.includes(bookId);
+        setFavorites((current) => nextFavorite
+          ? [...current, bookId]
+          : current.filter((id) => id !== bookId));
+        try {
+          await setFavoriteBook(authUser, bookId, nextFavorite);
+        } catch (error) {
+          setFavorites((current) => nextFavorite
+            ? current.filter((id) => id !== bookId)
+            : [...current, bookId]);
+          setCatalogError(error instanceof Error ? error.message : "同步收藏失败。");
+        }
       },
       "登录后可以收藏图书，方便以后回到书架里查看。"
     );
@@ -324,6 +369,7 @@ export default function App() {
   const handleAuthSuccess = (user: AuthUser) => {
     setAuthUser(user);
     setCatalogUsers((current) => ensureUserInDirectory(current, user));
+    setCatalogRefreshKey((current) => current + 1);
     const action = pendingAction;
     setPendingAction(null);
     if (action) {
@@ -337,6 +383,7 @@ export default function App() {
     await signOut();
     setAuthUser(null);
     setPendingAction(null);
+    setCatalogRefreshKey((current) => current + 1);
     goTabs("discover");
   };
 
@@ -479,9 +526,11 @@ export default function App() {
                   <MessagesScreen
                     books={catalogBooks}
                     users={catalogUsers}
+                    currentUser={authUser}
                     notifications={notifications}
                     borrowRequests={borrowRequests}
                     onOpenBook={openBook}
+                    onBorrowTransition={handleBorrowTransition}
                   />
                 ) : (
                   <AuthRequiredPanel
@@ -565,8 +614,8 @@ export default function App() {
           <SuccessScreen
             title="申请已发送"
             subtitle="等待对方回复，你可以在消息里查看进度。"
-            actionLabel="查看申请状态"
-            onAction={() => goTabs("shelf")}
+            actionLabel="去消息查看"
+            onAction={() => goTabs("messages")}
           />
         )}
 
@@ -1194,14 +1243,17 @@ function ShelfScreen({
 }) {
   const [activeShelfSection, setActiveShelfSection] = useState<"shared" | "borrowed" | "lending" | "favorites">("shared");
   const isDemoShelf = currentUser?.isDemo || !currentUser;
+  const shelfBorrowStatuses: BorrowStatus[] = ["borrowed", "return_requested"];
   const borrowed = borrowRequests.filter((request) => (
-    request.borrowerId === currentUser?.id || (isDemoShelf && request.borrowerId === "bob")
+    shelfBorrowStatuses.includes(request.status)
+    && (request.borrowerId === currentUser?.id || (isDemoShelf && request.borrowerId === "bob"))
   )).map((request) => ({
     request,
     book: books.find((book) => book.id === request.bookId)
   })).filter((item): item is { request: typeof borrowRequests[number]; book: Book } => Boolean(item.book));
   const lending = borrowRequests.filter((request) => (
-    request.lenderId === currentUser?.id || (isDemoShelf && request.lenderId === "alice")
+    shelfBorrowStatuses.includes(request.status)
+    && (request.lenderId === currentUser?.id || (isDemoShelf && request.lenderId === "alice"))
   )).map((request) => ({
     request,
     book: books.find((book) => book.id === request.bookId)
@@ -1210,13 +1262,11 @@ function ShelfScreen({
     book.ownerId === currentUser?.id || book.ownerId === "alice"
   ));
   const favoriteBooks = books.filter((book) => favorites.includes(book.id));
-  const activeBorrowed = borrowed.filter(({ request }) => (
-    request.status === "accepted"
-    || request.status === "borrowed"
-    || request.status === "return_requested"
-  ));
-  const activeLending = lending.filter(({ request }) => !terminalBorrowStatuses.includes(request.status));
-  const pendingCount = [...borrowed, ...lending].filter(({ request }) => request.status === "pending").length;
+  const activeBorrowed = borrowed.filter(({ request }) => request.status === "borrowed");
+  const pendingCount = borrowRequests.filter((request) => (
+    request.status === "pending"
+    && (request.borrowerId === currentUser?.id || request.lenderId === currentUser?.id)
+  )).length;
   const returnCount = [...borrowed, ...lending].filter(({ request }) => request.status === "return_requested").length;
   const shelfSections = [
     { key: "shared", label: "我的共享", count: myBooks.length },
@@ -1307,7 +1357,7 @@ function ShelfScreen({
                 />
               ))
             ) : (
-              <EmptyState title="还没有借入图书" subtitle="在发现页找到喜欢的书，发送借阅申请后会显示在这里。" />
+              <EmptyState title="还没有借入图书" subtitle="对方同意后，请先在线下完成交接；确认拿到书后才会显示在这里。" />
             )}
           </>
         )}
@@ -1327,7 +1377,7 @@ function ShelfScreen({
                 />
               ))
             ) : (
-              <EmptyState title="还没有出借记录" subtitle="当邻居申请借你的书时，申请会出现在这里。" />
+              <EmptyState title="还没有出借记录" subtitle="新的借阅申请会先出现在消息里；交接完成后才会显示在这里。" />
             )}
           </>
         )}
@@ -1380,18 +1430,26 @@ function ShelfSharedBook({
 function MessagesScreen({
   books,
   users,
+  currentUser,
   notifications,
   borrowRequests,
-  onOpenBook
+  onOpenBook,
+  onBorrowTransition
 }: {
   books: Book[];
   users: User[];
+  currentUser: AuthUser;
   notifications: MessageNotification[];
   borrowRequests: BorrowRequest[];
   onOpenBook: (bookId: string) => void;
+  onBorrowTransition: (request: BorrowRequest, nextStatus: BorrowStatus) => Promise<void>;
 }) {
-  const unreadCount = notifications.filter((notification) => notification.unread).length;
-  const requestCount = notifications.filter((notification) => notification.requestId).length;
+  const visibleNotifications = notifications.filter((notification, index, list) => (
+    !notification.requestId
+    || list.findIndex((item) => item.requestId === notification.requestId) === index
+  ));
+  const unreadCount = visibleNotifications.filter((notification) => notification.unread).length;
+  const requestCount = visibleNotifications.filter((notification) => notification.requestId).length;
 
   return (
     <View style={styles.screen}>
@@ -1419,13 +1477,29 @@ function MessagesScreen({
           <Chip label="通知" />
         </ScrollView>
 
-        {notifications.length ? (
-          notifications.map((notification) => {
+        {visibleNotifications.length ? (
+          visibleNotifications.map((notification) => {
             const user = notification.userId ? getUser(notification.userId, users) : mockUsers[0];
             const book = notification.bookId ? books.find((item) => item.id === notification.bookId) : undefined;
             const request = notification.requestId
               ? borrowRequests.find((item) => item.id === notification.requestId)
               : undefined;
+            const isBorrowNotice = notification.kind === "borrow" && request && book;
+
+            if (isBorrowNotice) {
+              return (
+                <BorrowMessageCard
+                  key={notification.id}
+                  notification={notification}
+                  book={book}
+                  request={request}
+                  currentUser={currentUser}
+                  users={users}
+                  onOpenBook={onOpenBook}
+                  onTransition={onBorrowTransition}
+                />
+              );
+            }
 
             return (
               <TouchableOpacity
@@ -1456,30 +1530,91 @@ function MessagesScreen({
         ) : (
           <EmptyState title="还没有消息" subtitle="借阅申请、好友通知和系统消息会显示在这里。" />
         )}
-
-        <View style={styles.chatPreview}>
-          <View style={styles.chatPreviewHeader}>
-            <Avatar user={getUser("alice", users)} size={38} />
-            <View style={styles.flex}>
-              <Text style={styles.sectionHeading}>Alice 的聊天</Text>
-              <Text style={styles.mutedText}>借阅确认后继续沟通交接地点</Text>
-            </View>
-          </View>
-          <View style={styles.messageBubbleInbound}>
-            <Text style={styles.bodyText}>你想借这三本书吗？</Text>
-          </View>
-          <View style={styles.bookBundle}>
-            {books.slice(0, 3).map((book) => (
-              <TouchableOpacity key={book.id} onPress={() => onOpenBook(book.id)} activeOpacity={0.9}>
-                <BookCover book={book} size="tiny" />
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.messageBubbleOutbound}>
-            <Text style={styles.outboundText}>好的，可以的！我们约个时间吧。</Text>
-          </View>
-        </View>
       </ScrollView>
+    </View>
+  );
+}
+
+function BorrowMessageCard({
+  notification,
+  book,
+  request,
+  currentUser,
+  users,
+  onOpenBook,
+  onTransition
+}: {
+  notification: MessageNotification;
+  book: Book;
+  request: BorrowRequest;
+  currentUser: AuthUser;
+  users: User[];
+  onOpenBook: (bookId: string) => void;
+  onTransition: (request: BorrowRequest, nextStatus: BorrowStatus) => Promise<void>;
+}) {
+  const role: "borrower" | "lender" = request.lenderId === currentUser.id ? "lender" : "borrower";
+  const participantId = role === "lender" ? request.borrowerId : request.lenderId;
+  const participant = getMessageUser(participantId, users, notification);
+  const [busyStatus, setBusyStatus] = useState<BorrowStatus | null>(null);
+  const actions = borrowActionsFor(role, request.status);
+
+  const transition = async (nextStatus: BorrowStatus) => {
+    setBusyStatus(nextStatus);
+    try {
+      await onTransition(request, nextStatus);
+    } finally {
+      setBusyStatus(null);
+    }
+  };
+
+  return (
+    <View style={[styles.borrowMessageCard, notification.unread && styles.threadRowUnread]}>
+      <View style={styles.borrowMessageHeader}>
+        <Avatar user={participant} size={44} />
+        <View style={styles.flex}>
+          <View style={styles.threadTitleRow}>
+            <Text numberOfLines={1} style={styles.cardTitle}>{borrowMessageTitle(role, request.status, participant.displayName)}</Text>
+            <Text style={styles.threadTimeText}>{notification.time}</Text>
+          </View>
+          <Text numberOfLines={1} style={styles.mutedText}>{participant.displayName} · {role === "lender" ? "向你借书" : "出借者"}</Text>
+        </View>
+        {notification.unread && <View style={styles.unreadDot} />}
+      </View>
+
+      <TouchableOpacity activeOpacity={0.88} style={styles.borrowMessageBookRow} onPress={() => onOpenBook(book.id)}>
+        <BookCover book={book} size="tiny" />
+        <View style={styles.flex}>
+          <Text numberOfLines={1} style={styles.cardTitle}>{book.title}</Text>
+          <Text numberOfLines={1} style={styles.mutedText}>{book.author}</Text>
+        </View>
+        <View style={styles.messageStatusLine}>
+          <Text style={styles.messageStatusText}>{statusLabel(request.status)}</Text>
+        </View>
+      </TouchableOpacity>
+
+      <View style={role === "lender" ? styles.messageBubbleInbound : styles.messageBubbleOutbound}>
+        <Text style={role === "lender" ? styles.bodyText : styles.outboundText}>
+          {request.message || statusMessage(request.status)}
+        </Text>
+      </View>
+
+      {actions.length > 0 && (
+        <View style={styles.borrowActionRow}>
+          {actions.map((action) => (
+            <TouchableOpacity
+              key={action.status}
+              activeOpacity={0.85}
+              disabled={busyStatus !== null}
+              style={[styles.borrowActionButton, action.kind === "danger" && styles.borrowDangerButton]}
+              onPress={() => transition(action.status)}
+            >
+              <Text style={[styles.borrowActionText, action.kind === "danger" && styles.borrowDangerText]}>
+                {busyStatus === action.status ? "处理中" : action.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -2666,6 +2801,39 @@ function borrowActionsFor(role: "borrower" | "lender", status: BorrowStatus) {
     return [{ label: "确认已归还", status: "returned" as BorrowStatus, kind: "primary" as const }];
   }
   return [];
+}
+
+function borrowMessageTitle(role: "borrower" | "lender", status: BorrowStatus, displayName: string): string {
+  if (role === "lender") {
+    if (status === "pending") return `${displayName} 想借这本书`;
+    if (status === "return_requested") return `${displayName} 申请归还`;
+    return `${displayName} 的借阅进度`;
+  }
+  if (status === "accepted") return "对方已同意借阅";
+  if (status === "borrowed") return "你已确认拿到书";
+  if (status === "return_requested") return "等待对方确认归还";
+  if (status === "returned") return "这次借阅已完成";
+  if (status === "rejected") return "借阅申请被拒绝";
+  if (status === "canceled") return "借阅申请已取消";
+  return "借阅申请已发送";
+}
+
+function getMessageUser(userId: string, directory: User[], notification: MessageNotification): User {
+  const found = directory.find((user) => user.id === userId);
+  if (found) return found;
+
+  const nameFromBody = notification.body.split("·")[0]?.trim();
+  const displayName = nameFromBody && !nameFromBody.includes("《") ? nameFromBody : "附近书友";
+  return {
+    id: userId,
+    displayName,
+    avatar: displayName.slice(0, 1).toUpperCase(),
+    distanceKm: 0,
+    sharedCount: 0,
+    rating: 4.8,
+    bio: "LinkNest 书友",
+    neighborhood: "附近"
+  };
 }
 
 function getUser(userId: string, directory: User[] = mockUsers): User {
@@ -4116,6 +4284,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     color: palette.green
+  },
+  borrowMessageCard: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 22,
+    backgroundColor: palette.panel,
+    borderWidth: 1,
+    borderColor: palette.faint
+  },
+  borrowMessageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  borrowMessageBookRow: {
+    minHeight: 58,
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 16,
+    backgroundColor: "#F7FAF7",
+    borderWidth: 1,
+    borderColor: palette.faint,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
   },
   unreadDot: {
     width: 9,
