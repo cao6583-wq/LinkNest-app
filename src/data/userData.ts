@@ -1,4 +1,4 @@
-import { mapBorrowRowToRequest, statusLabel } from "./borrowWorkflow";
+import { mapBorrowRowToRequest, mapMessageRowsToChatMessages, statusLabel } from "./borrowWorkflow";
 import { demoFriendships, mapFriendshipRow } from "./friendWorkflow";
 import { borrowRequests as mockBorrowRequests } from "./mockData";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
@@ -7,7 +7,9 @@ import type { BorrowRequest, Friendship, MessageNotification } from "../types";
 import type { Database } from "../types/database";
 
 type BorrowRequestRow = Database["public"]["Tables"]["borrow_requests"]["Row"];
+type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
 type FriendshipRow = Database["public"]["Tables"]["friendships"]["Row"];
+type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
 type BookRow = Database["public"]["Tables"]["books"]["Row"];
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -50,13 +52,73 @@ export async function fetchUserData(user: AuthUser): Promise<UserData> {
 
   const borrowRows = (borrowResult.data ?? []) as BorrowRequestRow[];
   const friendshipRows = (friendshipResult.data ?? []) as FriendshipRow[];
+  const borrowConversationData = await fetchBorrowConversationData(borrowRows);
 
   return {
     favorites: ((favoriteResult.data ?? []) as Array<{ book_id: string }>).map((favorite) => favorite.book_id),
-    borrowRequests: borrowRows.map(mapBorrowRowToRequest),
+    borrowRequests: borrowRows.map((row) => {
+      const conversation = borrowConversationData.conversationsByRequestId.get(row.id);
+      const messages = conversation
+        ? borrowConversationData.messagesByConversationId.get(conversation.id)
+        : undefined;
+      return mapBorrowRowToRequest(row, messages, conversation?.id);
+    }),
     friendships: friendshipRows.map(mapFriendshipRow),
     notifications: await buildNotifications(user.id, borrowRows, friendshipRows),
     source: "supabase"
+  };
+}
+
+async function fetchBorrowConversationData(borrowRows: BorrowRequestRow[]): Promise<{
+  conversationsByRequestId: Map<string, ConversationRow>;
+  messagesByConversationId: Map<string, ReturnType<typeof mapMessageRowsToChatMessages>>;
+}> {
+  const borrowRequestIds = borrowRows.map((request) => request.id);
+  if (!borrowRequestIds.length) {
+    return {
+      conversationsByRequestId: new Map(),
+      messagesByConversationId: new Map()
+    };
+  }
+
+  const conversationResult = await (supabase.from("conversations") as any)
+    .select("*")
+    .eq("type", "borrow")
+    .in("borrow_request_id", borrowRequestIds);
+
+  if (conversationResult.error) throw conversationResult.error;
+
+  const conversations = (conversationResult.data ?? []) as ConversationRow[];
+  const conversationIds = conversations.map((conversation) => conversation.id);
+  const conversationsByRequestId = new Map(conversations
+    .filter((conversation) => conversation.borrow_request_id)
+    .map((conversation) => [conversation.borrow_request_id as string, conversation]));
+
+  if (!conversationIds.length) {
+    return {
+      conversationsByRequestId,
+      messagesByConversationId: new Map()
+    };
+  }
+
+  const messageResult = await (supabase.from("messages") as any)
+    .select("*")
+    .in("conversation_id", conversationIds)
+    .order("created_at", { ascending: true });
+
+  if (messageResult.error) throw messageResult.error;
+
+  const messagesByConversationId = new Map<string, MessageRow[]>();
+  for (const message of (messageResult.data ?? []) as MessageRow[]) {
+    const current = messagesByConversationId.get(message.conversation_id) ?? [];
+    current.push(message);
+    messagesByConversationId.set(message.conversation_id, current);
+  }
+
+  return {
+    conversationsByRequestId,
+    messagesByConversationId: new Map(Array.from(messagesByConversationId.entries())
+      .map(([conversationId, messages]) => [conversationId, mapMessageRowsToChatMessages(messages)]))
   };
 }
 

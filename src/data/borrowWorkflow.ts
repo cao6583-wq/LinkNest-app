@@ -4,6 +4,8 @@ import type { Book, BorrowChatMessage, BorrowRequest, BorrowStatus } from "../ty
 import type { Database } from "../types/database";
 
 type BorrowRequestRow = Database["public"]["Tables"]["borrow_requests"]["Row"];
+type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
+type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
 
 export type BorrowDraft = {
   book: Book;
@@ -45,7 +47,7 @@ export async function createBorrowRequest({ book, borrower, message }: BorrowDra
       book_id: book.id,
       borrower_id: borrower.id,
       lender_id: book.ownerId,
-      message: encodeBorrowChat([createChatMessage(borrower.id, body)]),
+      message: body,
       status: "pending"
     })
     .select("*")
@@ -104,14 +106,30 @@ export async function sendBorrowChatMessage({
     };
   }
 
-  const { data, error } = await (supabase.from("borrow_requests") as any)
-    .update({ message: encodeBorrowChat(nextMessages) })
-    .eq("id", request.id)
+  const conversationId = request.conversationId ?? await fetchBorrowConversationId(request.id);
+  if (!conversationId) {
+    return updateLegacyBorrowChat(request, nextMessages);
+  }
+
+  const { data, error } = await (supabase.from("messages") as any)
+    .insert({
+      conversation_id: conversationId,
+      sender_id: sender.id,
+      type: "text",
+      body: cleanBody,
+      metadata: { borrow_request_id: request.id }
+    })
     .select("*")
     .single();
 
   if (error) throw error;
-  return mapBorrowRowToRequest(data);
+  const persistedMessage = mapMessageRowToChatMessage(data);
+  return {
+    ...request,
+    conversationId,
+    message: firstUserMessage([...chatMessagesForRequest(request), persistedMessage]) || cleanBody,
+    chatMessages: [...chatMessagesForRequest(request), persistedMessage]
+  };
 }
 
 export function bookStatusForBorrow(status: BorrowStatus): Book["status"] {
@@ -158,8 +176,15 @@ export function statusLabel(status: BorrowStatus): string {
   }
 }
 
-export function mapBorrowRowToRequest(row: BorrowRequestRow): BorrowRequest {
-  const chatMessages = parseBorrowChat(row.message, row.borrower_id, row.requested_at);
+export function mapBorrowRowToRequest(
+  row: BorrowRequestRow,
+  conversationMessages?: BorrowChatMessage[],
+  conversationId?: string
+): BorrowRequest {
+  const legacyMessages = parseBorrowChat(row.message, row.borrower_id, row.requested_at);
+  const chatMessages = conversationMessages?.length
+    ? mergeLegacyAndConversationMessages(row.message, legacyMessages, conversationMessages)
+    : legacyMessages;
   return {
     id: row.id,
     bookId: row.book_id,
@@ -171,6 +196,7 @@ export function mapBorrowRowToRequest(row: BorrowRequestRow): BorrowRequest {
       month: "2-digit",
       day: "2-digit"
     }),
+    conversationId,
     chatMessages
   };
 }
@@ -201,6 +227,12 @@ export function systemMessageForStatus(status: BorrowStatus): string {
   }
 }
 
+export function mapMessageRowsToChatMessages(rows: MessageRow[]): BorrowChatMessage[] {
+  return rows
+    .map(mapMessageRowToChatMessage)
+    .filter((message) => message.body.trim().length > 0);
+}
+
 function timestampForStatus(status: BorrowStatus) {
   const now = new Date().toISOString();
   if (status === "accepted") return { accepted_at: now };
@@ -217,6 +249,41 @@ function createChatMessage(senderId: string, body: string, kind: BorrowChatMessa
     createdAt: new Date().toISOString(),
     kind
   };
+}
+
+function mapMessageRowToChatMessage(row: MessageRow): BorrowChatMessage {
+  return {
+    id: row.id,
+    senderId: row.sender_id,
+    body: row.body ?? "",
+    createdAt: row.created_at,
+    kind: row.type === "system" ? "system" : "text"
+  };
+}
+
+async function fetchBorrowConversationId(requestId: string): Promise<string | undefined> {
+  const { data, error } = await (supabase.from("conversations") as any)
+    .select("id")
+    .eq("borrow_request_id", requestId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return ((data as Pick<ConversationRow, "id"> | null) ?? null)?.id;
+}
+
+async function updateLegacyBorrowChat(
+  request: BorrowRequest,
+  nextMessages: BorrowChatMessage[]
+): Promise<BorrowRequest> {
+  const { data, error } = await (supabase.from("borrow_requests") as any)
+    .update({ message: encodeBorrowChat(nextMessages) })
+    .eq("id", request.id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return mapBorrowRowToRequest(data);
 }
 
 function parseBorrowChat(
@@ -243,6 +310,19 @@ function parseBorrowChat(
   } catch {
     return [];
   }
+}
+
+function mergeLegacyAndConversationMessages(
+  rawMessage: string | null,
+  legacyMessages: BorrowChatMessage[],
+  conversationMessages: BorrowChatMessage[]
+): BorrowChatMessage[] {
+  if (!rawMessage?.startsWith(chatPayloadPrefix)) return conversationMessages;
+  const conversationIds = new Set(conversationMessages.map((message) => message.id));
+  return [
+    ...legacyMessages.filter((message) => !conversationIds.has(message.id)),
+    ...conversationMessages
+  ].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
 }
 
 function encodeBorrowChat(messages: BorrowChatMessage[]): string {

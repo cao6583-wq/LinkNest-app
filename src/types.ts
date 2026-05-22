@@ -47,6 +47,7 @@ export type BorrowRequest = {
   status: BorrowStatus;
   message: string;
   dateLabel: string;
+  conversationId?: string;
   chatMessages?: BorrowChatMessage[];
 };
 
